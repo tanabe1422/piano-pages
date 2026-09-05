@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>5音の往復 — 口を閉じた「ん」</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>ピアノ</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,42 +13,7 @@
     </div>
 
     <main class="main">
-      <header class="header">
-        <h1>5音の往復</h1>
-        <p class="lead">口を閉じた「ん」で、鳴っている高さに合わせる。間の高さが切れたら、速さを「遅い」にして、切れた高さの前後だけ通る。</p>
-      </header>
-
       <p class="range" id="range-label"></p>
-
-      <div class="controls">
-        <div class="control-block">
-          <span class="control-label" id="skip-label">間隔</span>
-          <div class="segments segments-4" role="radiogroup" aria-labelledby="skip-label">
-            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-skip="step">通常</button>
-            <button type="button" class="segment" role="radio" aria-checked="false" data-skip="chromatic">半音</button>
-            <button type="button" class="segment" role="radio" aria-checked="false" data-skip="skip1">1つ飛ばし</button>
-            <button type="button" class="segment" role="radio" aria-checked="false" data-skip="skip2">2つ飛ばし</button>
-          </div>
-          <p class="hint">どの間隔も5音。1つ飛ばしは全音×5、2つ飛ばしは短3度×5。</p>
-        </div>
-
-        <div class="control-block">
-          <span class="control-label" id="dir-label">向き</span>
-          <div class="segments" role="radiogroup" aria-labelledby="dir-label">
-            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-dir="low-high-low">下→上→下</button>
-            <button type="button" class="segment" role="radio" aria-checked="false" data-dir="high-low-high">上→下→上</button>
-          </div>
-        </div>
-
-        <div class="control-block">
-          <span class="control-label" id="speed-label">速さ</span>
-          <div class="segments" role="radiogroup" aria-labelledby="speed-label">
-            <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slow">遅い</button>
-            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-speed="normal">ふつう</button>
-            <button type="button" class="segment" role="radio" aria-checked="false" data-speed="fast">速い</button>
-          </div>
-        </div>
-      </div>
 
       <div class="transport">
         <button type="button" class="btn btn-side" id="btn-lower" aria-label="半音下げて再生">
@@ -59,6 +24,39 @@
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8.5 5.5L16 12l-7.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>
         </button>
       </div>
+
+      <details class="settings">
+        <summary class="settings-toggle">設定</summary>
+        <div class="controls">
+          <div class="control-block">
+            <span class="control-label" id="skip-label">間隔</span>
+            <div class="segments segments-4" role="radiogroup" aria-labelledby="skip-label">
+              <button type="button" class="segment is-on" role="radio" aria-checked="true" data-skip="step">通常</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-skip="chromatic">半音</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-skip="skip1">1つ飛ばし</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-skip="skip2">2つ飛ばし</button>
+            </div>
+            <p class="hint">どの間隔も5音。1つ飛ばしは全音×5、2つ飛ばしは短3度×5。</p>
+          </div>
+
+          <div class="control-block">
+            <span class="control-label" id="dir-label">向き</span>
+            <div class="segments" role="radiogroup" aria-labelledby="dir-label">
+              <button type="button" class="segment is-on" role="radio" aria-checked="true" data-dir="low-high-low">下→上→下</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-dir="high-low-high">上→下→上</button>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <span class="control-label" id="speed-label">速さ</span>
+            <div class="segments" role="radiogroup" aria-labelledby="speed-label">
+              <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slow">遅い</button>
+              <button type="button" class="segment is-on" role="radio" aria-checked="true" data-speed="normal">ふつう</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-speed="fast">速い</button>
+            </div>
+          </div>
+        </div>
+      </details>
     </main>
   </div>
   <script src="app.js"></script>
