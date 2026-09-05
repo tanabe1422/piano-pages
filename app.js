@@ -145,6 +145,9 @@
   }
 
   function ensureAudio() {
+    if (navigator.audioSession) {
+      navigator.audioSession.type = "playback";
+    }
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!audioCtx) audioCtx = new Ctx();
     if (audioCtx.state === "suspended") audioCtx.resume();
