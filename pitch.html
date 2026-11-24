@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>音程</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page page-pitch">
+    <div class="pitch-topbar">
+      <button type="button" class="pitch-topbar-btn" id="btn-mic">マイクを開始</button>
+      <button type="button" class="pitch-topbar-btn" id="btn-settings" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false">設定</button>
+    </div>
+
+    <main class="main main-pitch">
+      <div class="pitch-top">
+        <div class="pitch-top-inner">
+          <p class="pitch-now" id="pitch-now" aria-live="polite">—</p>
+          <div class="pitch-gauge" id="pitch-gauge" aria-hidden="true">
+            <div class="pitch-gauge-track">
+              <span class="pitch-gauge-slot" style="top:12%"></span>
+              <span class="pitch-gauge-slot" style="top:31%"></span>
+              <span class="pitch-gauge-mark is-center" style="top:50%"></span>
+              <span class="pitch-gauge-slot" style="top:69%"></span>
+              <span class="pitch-gauge-slot" style="top:88%"></span>
+              <div class="pitch-gauge-needle" id="pitch-needle"></div>
+              <div class="pitch-gauge-live" id="pitch-live" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pitch-transport-row">
+        <div class="transport pitch-transport">
+          <button type="button" class="btn btn-side btn-oct" id="btn-oct-lower" aria-label="1オクターブ下げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M14.5 4.5L8 12l6.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+              <path d="M19.5 4.5L13 12l6.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+            </svg>
+          </button>
+          <button type="button" class="btn btn-side btn-scale" id="btn-scale-lower" aria-label="音階を1音下げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15.5 5.5L8 12l7.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+          </button>
+          <button type="button" class="btn btn-side btn-semi" id="btn-semi-lower" aria-label="半音下げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M13 7.5L9.5 12 13 16.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+              <path d="M15.5 9v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            </svg>
+          </button>
+          <button type="button" class="btn btn-play" id="btn-play">
+            <span class="btn-play-main" id="btn-play-label">再生</span>
+            <span class="btn-play-tonic" id="btn-play-tonic">mid1C</span>
+          </button>
+          <button type="button" class="btn btn-side btn-semi" id="btn-semi-higher" aria-label="半音上げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M11 7.5L14.5 12 11 16.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+              <path d="M8.5 9v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            </svg>
+          </button>
+          <button type="button" class="btn btn-side btn-scale" id="btn-scale-higher" aria-label="音階を1音上げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M8.5 5.5L16 12l-7.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+          </button>
+          <button type="button" class="btn btn-side btn-oct" id="btn-oct-higher" aria-label="1オクターブ上げて再生">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M9.5 4.5L16 12l-6.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+              <path d="M4.5 4.5L11 12l-6.5 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+            </svg>
+          </button>
+        </div>
+        <div class="pitch-pattern-wrap">
+          <button type="button" class="btn btn-side btn-pattern" id="btn-pattern" aria-haspopup="listbox" aria-expanded="false" aria-controls="pattern-menu" aria-label="練習パターンを選ぶ">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            </svg>
+          </button>
+          <ul class="pitch-pattern-menu" id="pattern-menu" role="listbox" aria-labelledby="btn-pattern" hidden></ul>
+        </div>
+      </div>
+
+      <div class="pitch-scroll-wrap">
+        <canvas class="pitch-scroll" id="pitch-scroll" width="640" height="220" aria-label="音程バー"></canvas>
+      </div>
+
+      <div class="keyboard-wrap pitch-keyboard-wrap" id="keyboard-wrap">
+        <div class="keyboard" id="keyboard" aria-hidden="true"></div>
+      </div>
+    </main>
+
+    <div class="pitch-start-backdrop" id="mic-start-backdrop">
+      <div class="pitch-start-dialog" role="dialog" aria-modal="true" aria-labelledby="mic-start-title">
+        <p class="pitch-start-title" id="mic-start-title">マイクを開始してください</p>
+        <button type="button" class="pitch-start-btn" id="btn-mic-start">マイクを開始</button>
+      </div>
+    </div>
+
+    <div class="pitch-dialog-backdrop" id="settings-backdrop" hidden></div>
+    <div class="pitch-dialog" id="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+      <div class="pitch-dialog-head">
+        <h2 class="pitch-dialog-title" id="settings-title">設定</h2>
+        <button type="button" class="btn btn-sub" id="btn-settings-close">閉じる</button>
+      </div>
+      <div class="controls">
+        <div class="control-block">
+          <span class="control-label" id="label-mode">表記</span>
+          <div class="segments" role="radiogroup" aria-labelledby="label-mode">
+            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-label="letter">英字</button>
+            <button type="button" class="segment" role="radio" aria-checked="false" data-label="solfa">ドレミ</button>
+            <button type="button" class="segment" role="radio" aria-checked="false" data-label="both">両方</button>
+          </div>
+        </div>
+        <div class="control-block">
+          <span class="control-label" id="speed-label">速さ</span>
+          <div class="segments" role="radiogroup" aria-labelledby="speed-label">
+            <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slow">遅い</button>
+            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-speed="normal">ふつう</button>
+            <button type="button" class="segment" role="radio" aria-checked="false" data-speed="fast">速い</button>
+          </div>
+        </div>
+        <div class="control-block">
+          <span class="control-label" id="skew-label">表示のずれ</span>
+          <div class="segments" role="radiogroup" aria-labelledby="skew-label">
+            <button type="button" class="segment" role="radio" aria-checked="false" data-skew="early">早める</button>
+            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-skew="normal">そのまま</button>
+            <button type="button" class="segment" role="radio" aria-checked="false" data-skew="late">遅らせる</button>
+          </div>
+          <p class="hint">ピアノに合わせて歌う。声の線が枠より右に残るなら「早める」、左に行き過ぎなら「遅らせる」。</p>
+        </div>
+        <div class="control-block">
+          <span class="control-label" id="tolerance-label">ぴったり判定</span>
+          <div class="segments" role="radiogroup" aria-labelledby="tolerance-label">
+            <button type="button" class="segment" role="radio" aria-checked="false" data-tolerance="tight">せまい</button>
+            <button type="button" class="segment" role="radio" aria-checked="false" data-tolerance="normal">ふつう</button>
+            <button type="button" class="segment is-on" role="radio" aria-checked="true" data-tolerance="wide">ひろい</button>
+          </div>
+          <p class="hint">ひろいは約±40セント。カラオケの音程バーに近い目安で、公式の数値ではない。</p>
+        </div>
+        <div class="control-block">
+          <label class="control-label" for="mic-select">マイク</label>
+          <select class="pitch-select" id="mic-select" aria-label="使うマイク">
+            <option value="">読み込み中</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="yin.js"></script>
+  <script src="pitch.js"></script>
+</body>
+</html>

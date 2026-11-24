@@ -1,0 +1,9 @@
+{
+  "title": "ドミソ（動作確認用）",
+  "notes": [
+    { "midi": 60, "startMs": 0, "durationMs": 500 },
+    { "midi": 64, "startMs": 500, "durationMs": 500 },
+    { "midi": 67, "startMs": 1000, "durationMs": 500 },
+    { "midi": 72, "startMs": 1500, "durationMs": 800 }
+  ]
+}

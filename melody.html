@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>メロディ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page">
+    <div class="keyboard-wrap" id="keyboard-wrap">
+      <div class="keyboard" id="keyboard" aria-hidden="true"></div>
+    </div>
+
+    <main class="main">
+      <p class="range" id="range-label"></p>
+
+      <div class="transport">
+        <button type="button" class="btn btn-side" id="btn-lower" aria-label="半音下げて再生">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15.5 5.5L8 12l7.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+        </button>
+        <button type="button" class="btn btn-play" id="btn-play">再生</button>
+        <button type="button" class="btn btn-side" id="btn-higher" aria-label="半音上げて再生">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8.5 5.5L16 12l-7.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+        </button>
+      </div>
+
+      <details class="settings" open>
+        <summary class="settings-toggle">入力と速さ</summary>
+        <div class="controls">
+          <div class="control-block">
+            <span class="control-label" id="speed-label">速さ</span>
+            <div class="segments" role="radiogroup" aria-labelledby="speed-label">
+              <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slow">遅い</button>
+              <button type="button" class="segment is-on" role="radio" aria-checked="true" data-speed="normal">ふつう</button>
+              <button type="button" class="segment" role="radio" aria-checked="false" data-speed="fast">速い</button>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <span class="control-label">ファイル</span>
+            <label class="file-btn">
+              音声または動画を選ぶ
+              <input type="file" id="file-input" accept="audio/*,video/*,.wav,.mp3,.m4a,.mp4,.webm,.ogg">
+            </label>
+            <p class="hint">wav、mp3、m4a。動画はブラウザが音声を読めるときだけ使える。</p>
+          </div>
+
+          <div class="control-block" id="tab-block">
+            <span class="control-label">タブの音</span>
+            <div class="row-btns">
+              <button type="button" class="btn btn-sub" id="btn-record">タブの音を録る</button>
+              <button type="button" class="btn btn-sub" id="btn-record-stop" disabled>録音を止めて解析</button>
+            </div>
+            <p class="hint" id="tab-hint">パソコンの Chrome または Edge。タブを選び、音声の共有にチェックを入れる。</p>
+          </div>
+
+          <div class="control-block">
+            <span class="control-label">JSON</span>
+            <div class="row-btns">
+              <button type="button" class="btn btn-sub" id="btn-apply-json">このJSONで再生</button>
+              <button type="button" class="btn btn-sub" id="btn-save-json">JSONを保存</button>
+              <label class="file-btn file-btn-inline">
+                JSONを開く
+                <input type="file" id="json-input" accept="application/json,.json">
+              </label>
+            </div>
+            <textarea class="json-area" id="json-area" spellcheck="false" rows="10" aria-label="メロディのJSON"></textarea>
+            <p class="hint">形は title と notes（midi、startMs、durationMs）。直した内容は「このJSONで再生」で反映する。</p>
+          </div>
+        </div>
+      </details>
+
+      <p class="status" id="status" role="status"></p>
+      <p class="page-nav"><a href="index.html">ピアノ</a>　<a href="pitch.html">音程</a></p>
+    </main>
+  </div>
+  <script src="yin.js"></script>
+  <script src="melody.js"></script>
+</body>
+</html>

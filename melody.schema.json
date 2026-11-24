@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "melody.schema.json",
+  "title": "ピアノ用メロディ",
+  "description": "音の高さと長さ。midi は C4=60、C#5=73。startMs と durationMs は解析結果のミリ秒。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["notes"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": "無題"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["midi", "startMs", "durationMs"],
+        "properties": {
+          "midi": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          },
+          "startMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "durationMs": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      }
+    }
+  }
+}
