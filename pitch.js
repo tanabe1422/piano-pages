@@ -50,6 +50,7 @@
   var SKEW_KEY = "piano-pitch-skew";
   var TOLERANCE_KEY = "piano-pitch-tolerance";
   var PATTERN_KEY = "piano-pitch-pattern";
+  var SONG_KEY = "piano-pitch-song";
   var SCRIPT_BUFFER = 4096;
 
   function cssVar(name, fallback) {
@@ -67,6 +68,8 @@
   var speed = "normal";
   var skew = "normal";
   var patternId = "scale-up";
+  var song = null;
+  var songShift = 0;
   var tolerance = "wide";
   var centsOk = TOLERANCE.wide.ok;
   var centsNear = TOLERANCE.wide.near;
@@ -130,6 +133,8 @@
   var btnOctLower = document.getElementById("btn-oct-lower");
   var btnOctHigher = document.getElementById("btn-oct-higher");
   var btnPattern = document.getElementById("btn-pattern");
+  var btnSong = document.getElementById("btn-song");
+  var songFile = document.getElementById("song-file");
   var patternMenu = document.getElementById("pattern-menu");
   var preferredMicId = "";
 
@@ -416,6 +421,7 @@
   }
 
   function patternMeta(id) {
+    if (id === "song" && song) return { id: "song", label: song.title };
     var i;
     for (i = 0; i < PATTERNS.length; i++) {
       if (PATTERNS[i].id === id) return PATTERNS[i];
@@ -423,16 +429,96 @@
     return PATTERNS[0];
   }
 
+  function songMode() {
+    return patternId === "song" && song && song.notes.length > 0;
+  }
+
+  function parseSong(data) {
+    if (typeof data === "string") data = JSON.parse(data);
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new Error("オブジェクトではない");
+    }
+    if (!Array.isArray(data.notes) || !data.notes.length) {
+      throw new Error("notes がない");
+    }
+    var title = typeof data.title === "string" && data.title ? data.title : "無題";
+    var notes = data.notes.map(function (n, i) {
+      if (!n || typeof n !== "object") throw new Error((i + 1) + "音目がオブジェクトではない");
+      var midi = Number(n.midi);
+      var startMs = Number(n.startMs);
+      var durationMs = Number(n.durationMs);
+      if (!Number.isFinite(midi) || midi < 0 || midi > 127) {
+        throw new Error((i + 1) + "音目の midi が 0〜127 ではない");
+      }
+      if (!Number.isFinite(startMs) || startMs < 0) {
+        throw new Error((i + 1) + "音目の startMs が 0 以上ではない");
+      }
+      if (!Number.isFinite(durationMs) || durationMs <= 0) {
+        throw new Error((i + 1) + "音目の durationMs が正の数ではない");
+      }
+      return {
+        midi: Math.round(midi),
+        startMs: startMs,
+        durationMs: durationMs
+      };
+    });
+    notes.sort(function (a, b) {
+      return a.startMs - b.startMs;
+    });
+    return { title: title, notes: notes };
+  }
+
+  function rememberSong() {
+    try {
+      localStorage.setItem(SONG_KEY, JSON.stringify(song));
+    } catch (e) {}
+  }
+
+  function speedRate() {
+    return (SPEEDS[speed] || SPEEDS.normal) / SPEEDS.normal;
+  }
+
+  function songEvents() {
+    var rate = speedRate();
+    return song.notes.map(function (n) {
+      return {
+        midi: n.midi + songShift,
+        startMs: n.startMs * rate,
+        durationMs: n.durationMs * rate,
+        guide: true
+      };
+    }).filter(function (n) {
+      return n.midi >= 0 && n.midi <= 127 && n.durationMs > 0;
+    });
+  }
+
+  function songBounds(extra) {
+    var min = 127;
+    var max = 0;
+    song.notes.forEach(function (n) {
+      var m = n.midi + songShift + extra;
+      if (m < min) min = m;
+      if (m > max) max = m;
+    });
+    return { min: min, max: max };
+  }
+
   function updatePlayButton() {
     btnPlayLabel.textContent = playing ? "停止" : "再生";
-    btnPlayTonic.textContent = formatNote(tonic);
+    if (songMode()) {
+      btnPlayTonic.textContent = song.title + (songShift ? (songShift > 0 ? " +" : " ") + songShift : "");
+    } else {
+      btnPlayTonic.textContent = formatNote(tonic);
+    }
     btnPlay.classList.toggle("is-playing", playing);
     btnPlay.setAttribute("aria-pressed", playing ? "true" : "false");
   }
 
   function updateTonicMark() {
+    var mark = tonic;
+    if (songMode()) mark = song.notes[0].midi + songShift;
     Object.keys(keysByMidi).forEach(function (key) {
-      keysByMidi[key].classList.toggle("is-start", Number(key) === tonic);
+      keysByMidi[key].classList.toggle("is-start", Number(key) === mark);
     });
   }
 
@@ -479,6 +565,25 @@
   }
 
   function updateTransposeButtons() {
+    if (songMode()) {
+      var semiDown = songBounds(-1);
+      var semiUp = songBounds(1);
+      var octDown = songBounds(-12);
+      var octUp = songBounds(12);
+      btnSemiLower.disabled = semiDown.min < 0;
+      btnSemiHigher.disabled = semiUp.max > 127;
+      btnOctLower.disabled = octDown.min < 0;
+      btnOctHigher.disabled = octUp.max > 127;
+      var base = song.notes[0].midi + songShift;
+      var saved = tonic;
+      tonic = base;
+      var scaleDown = base + (nextScaleTonic(-1) - base);
+      var scaleUp = base + (nextScaleTonic(1) - base);
+      tonic = saved;
+      btnScaleLower.disabled = songBounds(scaleDown - base).min < 0;
+      btnScaleHigher.disabled = songBounds(scaleUp - base).max > 127;
+      return;
+    }
     var scaleDown = nextScaleTonic(-1);
     var scaleUp = nextScaleTonic(1);
     btnScaleLower.disabled = scaleDown < TONIC_MIN;
@@ -490,14 +595,20 @@
   }
 
   function highlightGuide(midi) {
+    var list = [];
+    if (Array.isArray(midi)) list = midi;
+    else if (midi != null) list = [midi];
     Object.keys(keysByMidi).forEach(function (key) {
       keysByMidi[key].classList.remove("is-on");
     });
-    if (midi == null) return;
-    var el = keysByMidi[midi];
-    if (!el) return;
-    el.classList.add("is-on");
-    ensureKeyVisible(el);
+    var last = null;
+    list.forEach(function (m) {
+      var el = keysByMidi[m];
+      if (!el) return;
+      el.classList.add("is-on");
+      last = el;
+    });
+    if (last) ensureKeyVisible(last);
   }
 
   function stopVoices() {
@@ -618,6 +729,11 @@
     playing = true;
     updatePlayButton();
 
+    if (songMode()) {
+      playTimeline(ctx, token, songEvents());
+      return;
+    }
+
     var events = buildPatternEvents();
     var cueMidi = firstPatternMidi(events);
     var delaySec = 0.04;
@@ -687,15 +803,70 @@
     );
   }
 
+  function playTimeline(ctx, token, events) {
+    var hearLag = audioOutputLagSec(ctx);
+    var origin = ctx.currentTime + 0.05;
+    var onCount = {};
+    var endAt = origin;
+
+    function shown() {
+      return Object.keys(onCount).map(function (key) {
+        return Number(key);
+      });
+    }
+
+    events.forEach(function (ev) {
+      var start = origin + ev.startMs / 1000;
+      var durSec = ev.durationMs / 1000;
+      scheduleNote(ctx, ev.midi, start, noteHoldSec(ev.durationMs));
+      guideNotes.push({
+        midi: ev.midi,
+        t0: wallFromAudio(ctx, start + hearLag),
+        t1: wallFromAudio(ctx, start + durSec + hearLag),
+        token: token
+      });
+      if (start + durSec > endAt) endAt = start + durSec;
+      (function (midi, audioStart, audioEnd) {
+        timers.push(
+          setTimeout(function () {
+            if (token !== playToken) return;
+            onCount[midi] = (onCount[midi] || 0) + 1;
+            highlightGuide(shown());
+          }, Math.max(0, (audioStart - ctx.currentTime) * 1000))
+        );
+        timers.push(
+          setTimeout(function () {
+            if (token !== playToken) return;
+            onCount[midi] -= 1;
+            if (onCount[midi] <= 0) delete onCount[midi];
+            highlightGuide(shown());
+          }, Math.max(0, (audioEnd - ctx.currentTime) * 1000))
+        );
+      })(ev.midi, start, start + durSec);
+    });
+    pruneGuideNotes(performance.now());
+
+    timers.push(
+      setTimeout(function () {
+        if (token !== playToken) return;
+        playing = false;
+        highlightGuide(null);
+        updatePlayButton();
+      }, Math.max(0, (endAt - ctx.currentTime) * 1000 + 40))
+    );
+  }
+
   function activeGuide(at) {
     if (!playing || !guideNotes.length) return null;
+    var best = null;
     var i;
     for (i = 0; i < guideNotes.length; i++) {
       var note = guideNotes[i];
       if (note.token !== activePlayToken) continue;
-      if (at >= note.t0 && at < note.t1) return note;
+      if (at < note.t0 || at >= note.t1) continue;
+      if (!best || note.midi > best.midi) best = note;
     }
-    return null;
+    return best;
   }
 
   function pruneGuideNotes(now) {
@@ -748,6 +919,7 @@
   }
 
   function patternLabel(id) {
+    if (id === "song" && song) return song.title;
     var i;
     for (i = 0; i < PATTERNS.length; i++) {
       if (PATTERNS[i].id === id) return PATTERNS[i].label;
@@ -757,7 +929,9 @@
 
   function refreshPatternMenu() {
     patternMenu.innerHTML = "";
-    PATTERNS.forEach(function (item) {
+    var items = PATTERNS.slice();
+    if (song && song.notes.length) items.unshift({ id: "song", label: song.title });
+    items.forEach(function (item) {
       var li = document.createElement("li");
       li.setAttribute("role", "none");
       var btn = document.createElement("button");
@@ -793,6 +967,7 @@
   }
 
   function setPattern(next) {
+    if (next === "song" && !songMode() && !(song && song.notes.length)) return;
     var meta = patternMeta(next);
     if (!meta || meta.id !== next) return;
     if (patternId === next) return;
@@ -801,10 +976,10 @@
       tonic = meta.root;
       if (tonic < TONIC_MIN) tonic = TONIC_MIN;
       if (tonic > TONIC_MAX) tonic = TONIC_MAX;
-      updateTransposeButtons();
-      updateTonicMark();
-      updatePlayButton();
     }
+    updateTransposeButtons();
+    updateTonicMark();
+    updatePlayButton();
     try {
       localStorage.setItem(PATTERN_KEY, next);
     } catch (e) {}
@@ -812,7 +987,19 @@
     if (playing) playScale();
   }
 
+  function shiftSongBy(delta) {
+    if (!delta || !songMode()) return;
+    var bounds = songBounds(delta);
+    if (bounds.min < 0 || bounds.max > 127) return;
+    songShift += delta;
+    updateTransposeButtons();
+    updateTonicMark();
+    updatePlayButton();
+    if (playing) playScale();
+  }
+
   function shiftTonicTo(next) {
+    if (songMode()) return;
     if (next < TONIC_MIN || next > TONIC_MAX) return;
     if (next === tonic) return;
     tonic = next;
@@ -823,14 +1010,31 @@
   }
 
   function shiftScale(dir) {
+    if (songMode()) {
+      var base = song.notes[0].midi + songShift;
+      var saved = tonic;
+      tonic = base;
+      var next = nextScaleTonic(dir);
+      tonic = saved;
+      shiftSongBy(next - base);
+      return;
+    }
     shiftTonicTo(nextScaleTonic(dir));
   }
 
   function shiftSemitone(dir) {
+    if (songMode()) {
+      shiftSongBy(dir);
+      return;
+    }
     shiftTonicTo(tonic + dir);
   }
 
   function shiftOctave(dir) {
+    if (songMode()) {
+      shiftSongBy(dir * 12);
+      return;
+    }
     shiftTonicTo(tonic + dir * 12);
   }
 
@@ -1514,6 +1718,36 @@
     if (playing) stopPlayback();
     else playScale();
   });
+  btnSong.addEventListener("click", function () {
+    ensureAudio();
+    songFile.value = "";
+    songFile.click();
+  });
+  songFile.addEventListener("change", function () {
+    var file = songFile.files && songFile.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        song = parseSong(String(reader.result));
+        songShift = 0;
+        patternId = "song";
+        rememberSong();
+        try {
+          localStorage.setItem(PATTERN_KEY, "song");
+        } catch (e) {}
+        btnPattern.title = song.title;
+        updateTransposeButtons();
+        updateTonicMark();
+        updatePlayButton();
+        refreshPatternMenu();
+        playScale();
+      } catch (e) {
+        btnPlayTonic.textContent = "読めない";
+      }
+    };
+    reader.readAsText(file);
+  });
   btnScaleLower.addEventListener("click", function () {
     shiftScale(-1);
   });
@@ -1608,6 +1842,13 @@
       setTolerance(savedTolerance);
     }
   } catch (e) {}
+
+  try {
+    var savedSong = localStorage.getItem(SONG_KEY);
+    if (savedSong) song = parseSong(savedSong);
+  } catch (e) {
+    song = null;
+  }
 
   try {
     var savedPattern = localStorage.getItem(PATTERN_KEY);

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "melody.schema.json",
   "title": "ピアノ用メロディ",
-  "description": "音の高さと長さ。midi は C4=60、C#5=73。startMs と durationMs は解析結果のミリ秒。",
+  "description": "音の高さと長さ。midi は C4=60、C#5=73。startMs と durationMs はミリ秒。bpm と拍子は入力ページ用で、再生は notes だけを使う。",
   "type": "object",
   "additionalProperties": false,
   "required": ["notes"],
@@ -10,6 +10,23 @@
     "title": {
       "type": "string",
       "default": "無題"
+    },
+    "bpm": {
+      "type": "number",
+      "minimum": 40,
+      "maximum": 240,
+      "description": "1分間の4分音符の数。再生ページは無視する。"
+    },
+    "numerator": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16,
+      "description": "拍子の分子。4/4 なら 4。"
+    },
+    "denominator": {
+      "type": "integer",
+      "enum": [2, 4, 8, 16],
+      "description": "拍子の分母。4/4 なら 4。1拍は4分音符。"
     },
     "notes": {
       "type": "array",

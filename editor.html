@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>JSON</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page page-editor">
+    <header class="editor-toolbar">
+      <div class="editor-toolbar-row">
+        <button type="button" class="btn btn-play" id="btn-play" disabled>最初から</button>
+        <button type="button" class="btn btn-play btn-play-from" id="btn-play-from" disabled>選択から</button>
+        <label class="editor-field">
+          <span class="control-label" id="bpm-label">BPM</span>
+          <input class="num-input" id="bpm" type="number" inputmode="numeric" min="40" max="240" step="1" value="120" aria-labelledby="bpm-label">
+        </label>
+        <label class="editor-field editor-field-meter">
+          <span class="control-label" id="numerator-label">拍子</span>
+          <span class="editor-meter">
+            <input class="num-input" id="numerator" type="number" inputmode="numeric" min="1" max="16" step="1" value="4" aria-labelledby="numerator-label">
+            <span>/</span>
+            <select class="select-input" id="denominator" aria-label="拍子の分母">
+              <option value="2">2</option>
+              <option value="4" selected>4</option>
+              <option value="8">8</option>
+              <option value="16">16</option>
+            </select>
+          </span>
+        </label>
+        <label class="editor-field">
+          <span class="control-label" id="measures-label">小節</span>
+          <input class="num-input" id="measures" type="number" inputmode="numeric" min="1" max="64" step="1" value="4" aria-labelledby="measures-label">
+        </label>
+        <label class="editor-field">
+          <span class="control-label" id="midi-label">高さ</span>
+          <input class="num-input" id="note-midi" type="number" inputmode="numeric" min="0" max="127" step="1" value="60" aria-labelledby="midi-label">
+        </label>
+        <span class="editor-readout" id="note-name">C4 ド</span>
+        <label class="editor-field">
+          <span class="control-label" id="length-label">選択中の長さ</span>
+          <input class="num-input" id="note-length" type="number" inputmode="decimal" min="0.125" max="16" step="any" aria-labelledby="length-label" disabled>
+        </label>
+        <span class="editor-readout" id="length-name">未選択</span>
+        <label class="editor-field editor-field-length">
+          <span class="control-label" id="preset-label">選択中の一覧</span>
+          <select class="select-input" id="length-preset" aria-labelledby="preset-label" disabled>
+            <option value="">選ぶ</option>
+            <optgroup label="音符">
+              <option value="4">4（全音符）</option>
+              <option value="3">3（付点2分音符）</option>
+              <option value="2">2（2分音符）</option>
+              <option value="1.5">1.5（付点4分音符）</option>
+              <option value="1">1（4分音符）</option>
+              <option value="0.75">0.75（付点8分音符）</option>
+              <option value="0.5">0.5（8分音符）</option>
+              <option value="0.375">0.375（付点16分音符）</option>
+              <option value="0.25">0.25（16分音符）</option>
+              <option value="0.125">0.125（32分音符）</option>
+            </optgroup>
+            <optgroup label="3連符">
+              <option value="0.667">0.667（3連符/2分音符）</option>
+              <option value="0.333">0.333（3連符/4分音符）</option>
+              <option value="0.167">0.167（3連符/8分音符）</option>
+            </optgroup>
+          </select>
+        </label>
+        <label class="editor-field">
+          <span class="control-label" id="add-length-label">追加する長さ</span>
+          <input class="num-input" id="add-length" type="number" inputmode="decimal" min="0.125" max="16" step="any" value="1" aria-labelledby="add-length-label">
+        </label>
+        <span class="editor-readout" id="add-length-name">4分音符</span>
+        <label class="editor-field editor-field-length">
+          <span class="control-label" id="add-preset-label">追加の一覧</span>
+          <select class="select-input" id="add-length-preset" aria-labelledby="add-preset-label">
+            <option value="">選ぶ</option>
+            <optgroup label="音符">
+              <option value="4">4（全音符）</option>
+              <option value="3">3（付点2分音符）</option>
+              <option value="2">2（2分音符）</option>
+              <option value="1.5">1.5（付点4分音符）</option>
+              <option value="1">1（4分音符）</option>
+              <option value="0.75">0.75（付点8分音符）</option>
+              <option value="0.5">0.5（8分音符）</option>
+              <option value="0.375">0.375（付点16分音符）</option>
+              <option value="0.25">0.25（16分音符）</option>
+              <option value="0.125">0.125（32分音符）</option>
+            </optgroup>
+            <optgroup label="3連符">
+              <option value="0.667">0.667（3連符/2分音符）</option>
+              <option value="0.333">0.333（3連符/4分音符）</option>
+              <option value="0.167">0.167（3連符/8分音符）</option>
+            </optgroup>
+          </select>
+        </label>
+        <button type="button" class="btn btn-sub" id="btn-extend" disabled>延長</button>
+        <button type="button" class="btn btn-sub" id="btn-snap-end" disabled>末尾へ</button>
+        <button type="button" class="btn btn-sub" id="btn-delete" disabled>消す</button>
+        <p class="page-nav editor-nav"><a href="index.html">ピアノ</a>　<a href="melody.html">メロディ</a>　<a href="pitch.html">音程</a></p>
+      </div>
+      <p class="hint">選択中の長さは、選んでいる音だけを変える。追加する長さは、次に置く音の長さで、選んでいる音は変えない。ドラッグで前の音の終わりに頭が合うと、その前の音の色が変わる。延長は、選択中の音に8分音符の3連符を1つ足す。</p>
+      <details class="json-fold">
+        <summary>JSON</summary>
+        <div class="row-btns">
+          <label class="editor-field editor-field-title">
+            <span class="control-label" for="title">題名</span>
+            <input class="text-input" id="title" type="text" value="無題" maxlength="80" autocomplete="off">
+          </label>
+          <button type="button" class="btn btn-sub" id="btn-apply">このJSONを小節へ</button>
+          <button type="button" class="btn btn-sub" id="btn-save">JSONを保存</button>
+          <button type="button" class="btn btn-sub" id="btn-copy">JSONをコピー</button>
+          <label class="file-btn file-btn-inline">
+            JSONを開く
+            <input type="file" id="json-input" accept="application/json,.json">
+          </label>
+        </div>
+        <textarea class="json-area" id="json-area" spellcheck="false" rows="8" aria-label="メロディのJSON"></textarea>
+        <p class="hint">各音は midi、startMs、durationMs。midi は C4 が 60。単位はミリ秒。画面の BPM と小節から計算する。</p>
+      </details>
+      <p class="status" id="status" role="status"></p>
+    </header>
+
+    <div class="score-scroll" id="score-scroll">
+      <div class="score" id="score"></div>
+    </div>
+
+    <div class="keyboard-wrap" id="keyboard-wrap">
+      <div class="keyboard-center">
+        <div class="keyboard-spacer" id="keyboard-spacer"></div>
+        <div class="keyboard" id="keyboard" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+  <script src="editor.js"></script>
+</body>
+</html>
