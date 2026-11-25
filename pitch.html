@@ -69,8 +69,10 @@
           </button>
         </div>
         <div class="pitch-pattern-wrap">
-          <button type="button" class="btn btn-side btn-song" id="btn-song" aria-label="曲のJSONを開く">曲</button>
-          <input type="file" id="song-file" accept=".json,application/json" hidden>
+          <label class="btn btn-side btn-song" id="btn-song" aria-label="曲のJSONを開く">
+            曲
+            <input type="file" id="song-file" accept=".json,application/json,text/plain,.txt">
+          </label>
           <button type="button" class="btn btn-side btn-pattern" id="btn-pattern" aria-haspopup="listbox" aria-expanded="false" aria-controls="pattern-menu" aria-label="練習パターンを選ぶ">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
               <path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>

@@ -1718,13 +1718,12 @@
     if (playing) stopPlayback();
     else playScale();
   });
-  btnSong.addEventListener("click", function () {
+  btnSong.addEventListener("pointerdown", function () {
     ensureAudio();
-    songFile.value = "";
-    songFile.click();
   });
   songFile.addEventListener("change", function () {
     var file = songFile.files && songFile.files[0];
+    songFile.value = "";
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
