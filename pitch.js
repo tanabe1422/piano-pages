@@ -39,11 +39,14 @@
   var CUE_NOTE_MS = 1000;
   var CUE_GAP_MS = 1000;
   var SKEW_MS = { early: 50, normal: 0, late: -50 };
+  var HIC_MIDI = 72;
   var PATTERNS = [
     { id: "scale-up", label: "音階 下→上→下" },
     { id: "scale-down", label: "音階 上→下→上" },
     { id: "leap-up", label: "半音往復 低いほうから" },
-    { id: "leap-down", label: "半音往復 高いほうから" }
+    { id: "leap-down", label: "半音往復 高いほうから" },
+    { id: "leap-hic-down", label: "半音往復 高いドから下", root: HIC_MIDI },
+    { id: "leap-hic-up", label: "半音往復 高いドから上", root: HIC_MIDI }
   ];
   var LABEL_KEY = "piano-pitch-label";
   var MIC_KEY = "piano-pitch-mic";
@@ -428,13 +431,39 @@
     return down.concat(up.slice(1));
   }
 
-  function pushLeapSection(events, targets, noteMs, longMs) {
+  function pushLeapSection(events, base, targets, noteMs, longMs) {
     var i;
     for (i = 0; i < targets.length; i++) {
-      events.push({ midi: tonic, durationMs: noteMs, guide: true });
-      events.push({ midi: tonic + targets[i], durationMs: noteMs, guide: true });
+      events.push({ midi: base, durationMs: noteMs, guide: true });
+      events.push({ midi: base + targets[i], durationMs: noteMs, guide: true });
     }
-    events.push({ midi: tonic, durationMs: longMs, guide: true });
+    events.push({ midi: base, durationMs: longMs, guide: true });
+  }
+
+  function patternRoot() {
+    var meta = patternMeta(patternId);
+    if (meta && typeof meta.root === "number") return meta.root;
+    return null;
+  }
+
+  function patternBase() {
+    var root = patternRoot();
+    return root == null ? tonic : root;
+  }
+
+  function signedLeaps(list, sign) {
+    var out = [];
+    var i;
+    for (i = 0; i < list.length; i++) out.push(list[i] * sign);
+    return out;
+  }
+
+  function pushLeapRun(events, base, sign, noteMs, longMs) {
+    pushLeapSection(events, base, signedLeaps(LEAP_LOW, sign), noteMs, longMs);
+    events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
+    pushLeapSection(events, base, signedLeaps(LEAP_MID, sign), noteMs, longMs);
+    events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
+    pushLeapSection(events, base, signedLeaps(LEAP_HIGH, sign), noteMs, longMs);
   }
 
   function buildPatternEvents() {
@@ -453,20 +482,26 @@
     }
 
     if (patternId === "leap-up") {
-      pushLeapSection(events, LEAP_LOW, noteMs, longMs);
-      events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
-      pushLeapSection(events, LEAP_MID, noteMs, longMs);
-      events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
-      pushLeapSection(events, LEAP_HIGH, noteMs, longMs);
+      pushLeapRun(events, tonic, 1, noteMs, longMs);
       return events;
     }
 
     if (patternId === "leap-down") {
-      pushLeapSection(events, LEAP_HIGH.slice().reverse(), noteMs, longMs);
+      pushLeapSection(events, tonic, LEAP_HIGH.slice().reverse(), noteMs, longMs);
       events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
-      pushLeapSection(events, LEAP_MID.slice().reverse(), noteMs, longMs);
+      pushLeapSection(events, tonic, LEAP_MID.slice().reverse(), noteMs, longMs);
       events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
-      pushLeapSection(events, LEAP_LOW.slice().reverse(), noteMs, longMs);
+      pushLeapSection(events, tonic, LEAP_LOW.slice().reverse(), noteMs, longMs);
+      return events;
+    }
+
+    if (patternId === "leap-hic-down") {
+      pushLeapRun(events, HIC_MIDI, -1, noteMs, longMs);
+      return events;
+    }
+
+    if (patternId === "leap-hic-up") {
+      pushLeapRun(events, HIC_MIDI, 1, noteMs, longMs);
       return events;
     }
 
@@ -654,7 +689,7 @@
       var name = phrase ? phrase.name : song.title;
       btnPlayTonic.textContent = name + (songShift ? (songShift > 0 ? " +" : " ") + songShift : "");
     } else {
-      btnPlayTonic.textContent = formatNote(tonic);
+      btnPlayTonic.textContent = formatNote(patternBase());
     }
     refreshPhraseSelect();
     btnPlay.classList.toggle("is-playing", playing);
@@ -662,7 +697,7 @@
   }
 
   function updateTonicMark() {
-    var mark = tonic;
+    var mark = patternBase();
     if (songMode()) mark = songPlayBase();
     Object.keys(keysByMidi).forEach(function (key) {
       keysByMidi[key].classList.toggle("is-start", Number(key) === mark);
@@ -712,6 +747,15 @@
   }
 
   function updateTransposeButtons() {
+    if (patternRoot() != null) {
+      btnScaleLower.disabled = true;
+      btnScaleHigher.disabled = true;
+      btnSemiLower.disabled = true;
+      btnSemiHigher.disabled = true;
+      btnOctLower.disabled = true;
+      btnOctHigher.disabled = true;
+      return;
+    }
     if (songMode()) {
       var semiDown = songBounds(-1);
       var semiUp = songBounds(1);
@@ -1128,11 +1172,6 @@
     if (!meta || meta.id !== next) return;
     if (patternId === next) return;
     patternId = next;
-    if (typeof meta.root === "number") {
-      tonic = meta.root;
-      if (tonic < TONIC_MIN) tonic = TONIC_MIN;
-      if (tonic > TONIC_MAX) tonic = TONIC_MAX;
-    }
     updateTransposeButtons();
     updateTonicMark();
     updatePlayButton();
@@ -1155,7 +1194,7 @@
   }
 
   function shiftTonicTo(next) {
-    if (songMode()) return;
+    if (songMode() || patternRoot() != null) return;
     if (next < TONIC_MIN || next > TONIC_MAX) return;
     if (next === tonic) return;
     tonic = next;
@@ -2081,12 +2120,6 @@
     var savedPattern = localStorage.getItem(PATTERN_KEY);
     if (patternMeta(savedPattern).id === savedPattern) {
       patternId = savedPattern;
-      var savedMeta = patternMeta(savedPattern);
-      if (typeof savedMeta.root === "number") {
-        tonic = savedMeta.root;
-        if (tonic < TONIC_MIN) tonic = TONIC_MIN;
-        if (tonic > TONIC_MAX) tonic = TONIC_MAX;
-      }
     }
   } catch (e) {}
   btnPattern.title = patternLabel(patternId);

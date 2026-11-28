@@ -13,6 +13,8 @@
 
 音程ページのマイクは、HTTPS または localhost で開いたときだけ使える。鍵盤は lowF（F2）から hihiC（C6）まで（lowソ〜hihiA を白鍵端で収める）。表記は設定で英字（hiA）／ドレミ／両方を切り替える。
 
+半音往復は、選んだ高さを基音にして、基音と半音ずつ離れた音を往復する。「半音往復 高いドから下」と「半音往復 高いドから上」は、基音を hiC（音名 C5）に固定する。下は hiC から半音ずつ低い音へ、上は hiC から半音ずつ高い音へ往復する。この2つを選んでいるあいだ、オクターブ、音階、半音の移動ボタンは無効になる。
+
 ## メロディの JSON
 
 形は [melody.schema.json](melody.schema.json)。例は [melody.example.json](melody.example.json)。
