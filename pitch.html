@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>音程</title>
-  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <div class="page page-pitch">
@@ -100,6 +100,7 @@
       <div class="pitch-start-dialog" role="dialog" aria-modal="true" aria-labelledby="mic-start-title">
         <p class="pitch-start-title" id="mic-start-title">マイクを開始してください</p>
         <button type="button" class="pitch-start-btn" id="btn-mic-start">マイクを開始</button>
+        <p class="pitch-start-status" id="mic-start-status" aria-live="polite" hidden></p>
       </div>
     </div>
 
@@ -120,11 +121,20 @@
         </div>
         <div class="control-block">
           <span class="control-label" id="speed-label">速さ</span>
-          <div class="segments" role="radiogroup" aria-labelledby="speed-label">
+          <div class="segments segments-4" role="radiogroup" aria-labelledby="speed-label">
+            <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slower">とても遅い</button>
             <button type="button" class="segment" role="radio" aria-checked="false" data-speed="slow">遅い</button>
             <button type="button" class="segment is-on" role="radio" aria-checked="true" data-speed="normal">ふつう</button>
             <button type="button" class="segment" role="radio" aria-checked="false" data-speed="fast">速い</button>
           </div>
+        </div>
+        <div class="control-block">
+          <label class="control-label" id="volume-label" for="volume-range">音量</label>
+          <div class="volume-row">
+            <input class="volume-range" id="volume-range" type="range" min="0" max="100" step="1" value="100" aria-labelledby="volume-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+            <span class="volume-value" id="volume-value">100</span>
+          </div>
+          <p class="hint">再生と、鍵盤を押したときの音の大きさ。100は、音量を足す前のピアノと同じ大きさ。</p>
         </div>
         <div class="control-block">
           <span class="control-label" id="skew-label">表示のずれ</span>
@@ -155,6 +165,6 @@
   </div>
   <input id="song-file" type="file" accept=".json,application/json,text/plain,.txt" tabindex="-1" aria-label="曲のJSONを開く" style="position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0">
   <script src="yin.js"></script>
-  <script src="pitch.js?v=7"></script>
+  <script src="pitch.js?v=9"></script>
 </body>
 </html>

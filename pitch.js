@@ -35,7 +35,7 @@
   var LEAP_MID = [5, 6, 7, 8];
   var LEAP_HIGH = [9, 10, 11, 12];
   var SECTION_GAP_MS = 2000;
-  var SPEEDS = { slow: 1000, normal: 600, fast: 350 };
+  var SPEEDS = { slower: 1700, slow: 1000, normal: 600, fast: 350 };
   var CUE_NOTE_MS = 1000;
   var CUE_GAP_MS = 1000;
   var SKEW_MS = { early: 50, normal: 0, late: -50 };
@@ -53,6 +53,7 @@
   var LABEL_KEY = "piano-pitch-label";
   var MIC_KEY = "piano-pitch-mic";
   var SPEED_KEY = "piano-pitch-speed";
+  var VOLUME_KEY = "piano-pitch-volume";
   var SKEW_KEY = "piano-pitch-skew";
   var TOLERANCE_KEY = "piano-pitch-tolerance";
   var PATTERN_KEY = "piano-pitch-pattern";
@@ -72,6 +73,8 @@
   var labelMode = "letter";
   var tonic = 60;
   var speed = "normal";
+  var volume = 1;
+  var outputGain = null;
   var skew = "normal";
   var patternId = "scale-up";
   var hicBase = HIC_MIDI;
@@ -95,6 +98,7 @@
   var micSource = null;
   var micSilent = null;
   var micOn = false;
+  var micRequest = null;
   var sampleBuf = new Float32Array(WINDOW);
   var samplePos = 0;
   var trail = [];
@@ -130,11 +134,14 @@
   var btnMic = document.getElementById("btn-mic");
   var btnMicStart = document.getElementById("btn-mic-start");
   var micStartBackdrop = document.getElementById("mic-start-backdrop");
+  var micStartStatus = document.getElementById("mic-start-status");
   var micSelect = document.getElementById("mic-select");
   var btnSettings = document.getElementById("btn-settings");
   var btnSettingsClose = document.getElementById("btn-settings-close");
   var settingsDialog = document.getElementById("settings-dialog");
   var settingsBackdrop = document.getElementById("settings-backdrop");
+  var volumeRange = document.getElementById("volume-range");
+  var volumeValue = document.getElementById("volume-value");
   var btnPlay = document.getElementById("btn-play");
   var btnPlayLabel = document.getElementById("btn-play-label");
   var btnPlayTonic = document.getElementById("btn-play-tonic");
@@ -332,14 +339,30 @@
     return 69 + 12 * Math.log(hz / 440) / Math.LN2;
   }
 
-  function ensureAudio() {
-    if (navigator.audioSession) {
-      navigator.audioSession.type = micOn ? "play-and-record" : "playback";
-    }
+  function applyAudioSession(forMic) {
+    if (!navigator.audioSession) return;
+    try {
+      // iOS Safariは、audioSessionがplaybackのままだとgetUserMediaが失敗し、許可の画面も出ない。
+      navigator.audioSession.type = forMic || micOn ? "play-and-record" : "playback";
+    } catch (e) {}
+  }
+
+  function ensureAudio(forMic) {
+    applyAudioSession(!!forMic);
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!audioCtx) audioCtx = new Ctx();
     if (audioCtx.state === "suspended") audioCtx.resume();
     return audioCtx;
+  }
+
+  function pianoOut() {
+    var ctx = ensureAudio();
+    if (!outputGain || outputGain.context !== ctx) {
+      outputGain = ctx.createGain();
+      outputGain.gain.value = volume;
+      outputGain.connect(ctx.destination);
+    }
+    return outputGain;
   }
 
   function startLiveNote(midi) {
@@ -375,7 +398,7 @@
     });
 
     filter.connect(master);
-    master.connect(ctx.destination);
+    master.connect(pianoOut());
     master.gain.setValueAtTime(0, now);
     master.gain.linearRampToValueAtTime(0.15, now + 0.07);
     master.gain.linearRampToValueAtTime(0.11, now + 0.55);
@@ -874,7 +897,7 @@
     tri.connect(triGain);
     sineGain.connect(master);
     triGain.connect(master);
-    master.connect(ctx.destination);
+    master.connect(pianoOut());
 
     sine.start(start);
     tri.start(start);
@@ -1105,6 +1128,27 @@
       localStorage.setItem(SPEED_KEY, next);
     } catch (e) {}
     if (playing) playScale();
+  }
+
+  function setVolume(next) {
+    var n = Math.round(Number(next));
+    if (!isFinite(n)) return;
+    n = Math.max(0, Math.min(100, n));
+    volume = n / 100;
+    if (volumeRange) {
+      volumeRange.value = String(n);
+      volumeRange.setAttribute("aria-valuenow", String(n));
+    }
+    if (volumeValue) volumeValue.textContent = String(n);
+    if (outputGain && audioCtx) {
+      var now = audioCtx.currentTime;
+      outputGain.gain.cancelScheduledValues(now);
+      outputGain.gain.setValueAtTime(outputGain.gain.value, now);
+      outputGain.gain.linearRampToValueAtTime(volume, now + 0.03);
+    }
+    try {
+      localStorage.setItem(VOLUME_KEY, String(n));
+    } catch (e) {}
   }
 
   function setSkew(next) {
@@ -1899,63 +1943,143 @@
     micOn = false;
     btnMic.textContent = "マイクを開始";
     btnMic.classList.remove("is-recording");
+    if (btnMicStart) btnMicStart.disabled = false;
     teardownMic();
+    applyAudioSession(false);
     clearPitchHold();
     refreshNowDisplay();
+    clearMicStartError();
     setMicStartVisible(true);
+  }
+
+  function clearMicStartError() {
+    if (!micStartStatus) return;
+    micStartStatus.hidden = true;
+    micStartStatus.textContent = "";
+  }
+
+  function micFailMessage(err) {
+    if (!window.isSecureContext) {
+      return "このページはHTTPSではないので、マイクを使えません。";
+    }
+    var name = err && err.name;
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      return "マイクの使用が拒否されました。ブラウザのサイト設定で、マイクを許可してください。";
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return "マイクが見つかりません。";
+    }
+    if (name === "NotReadableError" || name === "TrackStartError") {
+      return "マイクをほかのアプリが使っています。";
+    }
+    if (name === "NotSupportedError" || name === "SecurityError") {
+      return "このブラウザではマイクを使えません。";
+    }
+    return "マイクを開始できませんでした。もう一度押してください。";
+  }
+
+  function showMicStartError(err) {
+    if (micStartStatus) {
+      micStartStatus.hidden = false;
+      micStartStatus.textContent = micFailMessage(err);
+    }
+    setMicStartVisible(true);
+  }
+
+  function showMicStartPending() {
+    if (!micStartStatus) return;
+    micStartStatus.hidden = false;
+    micStartStatus.textContent = "マイクを開始しています。";
   }
 
   function micConstraints() {
     var audio = {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: true,
-      channelCount: 1
+      echoCancellation: { ideal: false },
+      noiseSuppression: { ideal: false },
+      autoGainControl: { ideal: true },
+      channelCount: { ideal: 1 }
     };
     var id = selectedMicId();
-    if (id) audio.deviceId = { exact: id };
+    if (id) audio.deviceId = { ideal: id };
     return { audio: audio };
   }
 
-  function startMic() {
-    if (!window.PianoPitch) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
-    ensureAudio();
-    saveMicChoice();
+  function requestMicStream() {
     var constraints = micConstraints();
-    navigator.mediaDevices
-      .getUserMedia(constraints)
-      .catch(function (err) {
-        if (constraints.audio.deviceId) {
-          delete constraints.audio.deviceId;
-          return navigator.mediaDevices.getUserMedia(constraints);
-        }
-        throw err;
-      })
-      .then(function (stream) {
-        teardownMic();
-        micStream = stream;
-        micOn = true;
-        samplePos = 0;
-        trail = [];
-        btnMic.textContent = "マイクを止める";
-        btnMic.classList.add("is-recording");
-        setMicStartVisible(false);
+    return navigator.mediaDevices.getUserMedia(constraints).catch(function (err) {
+      var name = err && err.name;
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") throw err;
+      return navigator.mediaDevices.getUserMedia({ audio: true });
+    });
+  }
 
-        micSource = audioCtx.createMediaStreamSource(stream);
-        micProc = audioCtx.createScriptProcessor(4096, 1, 1);
-        micSilent = audioCtx.createGain();
-        micSilent.gain.value = 0;
-        micProc.onaudioprocess = onMicAudio;
-        micSource.connect(micProc);
-        micProc.connect(micSilent);
-        micSilent.connect(audioCtx.destination);
-        refreshNowDisplay();
-        return refreshMicList();
+  function attachMicStream(stream) {
+    var ready = audioCtx && audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
+    return ready.then(function () {
+      teardownMic();
+      micStream = stream;
+      micSource = audioCtx.createMediaStreamSource(stream);
+      micProc = audioCtx.createScriptProcessor(4096, 1, 1);
+      micSilent = audioCtx.createGain();
+      micSilent.gain.value = 0;
+      micProc.onaudioprocess = onMicAudio;
+      micSource.connect(micProc);
+      micProc.connect(micSilent);
+      micSilent.connect(audioCtx.destination);
+      micOn = true;
+      samplePos = 0;
+      trail = [];
+      btnMic.textContent = "マイクを止める";
+      btnMic.classList.add("is-recording");
+      clearMicStartError();
+      setMicStartVisible(false);
+      applyAudioSession(true);
+      refreshNowDisplay();
+      return refreshMicList().catch(function () {});
+    }).catch(function (err) {
+      try {
+        stream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+      } catch (e) {}
+      if (micStream === stream) micStream = null;
+      throw err;
+    });
+  }
+
+  function startMic() {
+    if (micOn || micRequest) return;
+    micRequest = true;
+    function finish() {
+      micRequest = null;
+      if (btnMicStart) btnMicStart.disabled = false;
+    }
+    if (!window.PianoPitch || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showMicStartError({ name: window.isSecureContext ? "NotSupportedError" : "SecurityError" });
+      finish();
+      return;
+    }
+    try {
+      ensureAudio(true);
+    } catch (err) {
+      showMicStartError(err);
+      finish();
+      return;
+    }
+    showMicStartPending();
+    saveMicChoice();
+    if (btnMicStart) btnMicStart.disabled = true;
+    requestMicStream()
+      .then(attachMicStream)
+      .catch(function (err) {
+        teardownMic();
+        micOn = false;
+        btnMic.textContent = "マイクを開始";
+        btnMic.classList.remove("is-recording");
+        applyAudioSession(false);
+        showMicStartError(err);
       })
-      .catch(function () {
-        setMicStartVisible(true);
-      });
+      .then(finish, finish);
   }
 
   function toggleMic() {
@@ -1999,6 +2123,10 @@
     btn.addEventListener("click", function () {
       setSpeed(btn.getAttribute("data-speed"));
     });
+  });
+
+  volumeRange.addEventListener("input", function () {
+    setVolume(volumeRange.value);
   });
 
   document.querySelectorAll("[data-skew]").forEach(function (btn) {
@@ -2092,7 +2220,9 @@
   });
 
   btnMic.addEventListener("click", toggleMic);
-  btnMicStart.addEventListener("click", function () {
+  btnMicStart.addEventListener("click", startMic);
+  micStartBackdrop.addEventListener("click", function (e) {
+    if (e.target.closest("#btn-mic-start")) return;
     startMic();
   });
   micSelect.addEventListener("change", function () {
@@ -2135,9 +2265,14 @@
 
   try {
     var savedSpeed = localStorage.getItem(SPEED_KEY);
-    if (savedSpeed === "slow" || savedSpeed === "normal" || savedSpeed === "fast") {
+    if (savedSpeed === "slower" || savedSpeed === "slow" || savedSpeed === "normal" || savedSpeed === "fast") {
       setSpeed(savedSpeed);
     }
+  } catch (e) {}
+
+  try {
+    var savedVolume = localStorage.getItem(VOLUME_KEY);
+    if (savedVolume != null && savedVolume !== "") setVolume(savedVolume);
   } catch (e) {}
 
   try {
