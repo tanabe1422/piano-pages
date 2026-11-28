@@ -45,8 +45,8 @@
     { id: "scale-down", label: "音階 上→下→上" },
     { id: "leap-up", label: "半音往復 低いほうから" },
     { id: "leap-down", label: "半音往復 高いほうから" },
-    { id: "leap-hic-down", label: "半音往復 高いドから下", root: HIC_MIDI },
-    { id: "leap-hic-up", label: "半音往復 高いドから上", root: HIC_MIDI }
+    { id: "leap-hic-down", label: "半音往復 高いド mid2B→mid2C", root: HIC_MIDI },
+    { id: "leap-hic-up", label: "半音往復 高いド mid2C→mid2B", root: HIC_MIDI }
   ];
   var LABEL_KEY = "piano-pitch-label";
   var MIC_KEY = "piano-pitch-mic";
@@ -466,6 +466,14 @@
     pushLeapSection(events, base, signedLeaps(LEAP_HIGH, sign), noteMs, longMs);
   }
 
+  function pushLeapRunFromFar(events, base, sign, noteMs, longMs) {
+    pushLeapSection(events, base, signedLeaps(LEAP_HIGH.slice().reverse(), sign), noteMs, longMs);
+    events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
+    pushLeapSection(events, base, signedLeaps(LEAP_MID.slice().reverse(), sign), noteMs, longMs);
+    events.push({ midi: null, durationMs: SECTION_GAP_MS, guide: false });
+    pushLeapSection(events, base, signedLeaps(LEAP_LOW.slice().reverse(), sign), noteMs, longMs);
+  }
+
   function buildPatternEvents() {
     var noteMs = SPEEDS[speed] || SPEEDS.normal;
     var longMs = noteMs * 2;
@@ -501,7 +509,7 @@
     }
 
     if (patternId === "leap-hic-up") {
-      pushLeapRun(events, HIC_MIDI, 1, noteMs, longMs);
+      pushLeapRunFromFar(events, HIC_MIDI, -1, noteMs, longMs);
       return events;
     }
 
