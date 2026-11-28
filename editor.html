@@ -4,75 +4,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>JSON</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=15">
 </head>
 <body>
   <div class="page page-editor">
+    <header class="editor-links">
+      <nav aria-label="ページ">
+        <a href="index.html">ピアノ</a>
+        <a href="melody.html">メロディ</a>
+        <a href="pitch.html">音程</a>
+      </nav>
+      <span class="editor-sep" aria-hidden="true"></span>
+      <label class="editor-field editor-field-title">
+        <input class="text-input" id="title" type="text" value="無題" maxlength="80" autocomplete="off" aria-label="題名">
+      </label>
+      <span class="editor-sep" aria-hidden="true"></span>
+      <button type="button" class="btn btn-sub" id="btn-save">保存</button>
+      <button type="button" class="btn btn-sub" id="btn-copy">コピー</button>
+      <label class="file-btn file-btn-inline">
+        開く
+        <input type="file" id="json-input" accept="application/json,.json">
+      </label>
+      <span class="editor-sep" aria-hidden="true"></span>
+      <button type="button" class="btn btn-sub btn-new-doc" id="btn-new">新規作成</button>
+    </header>
     <header class="editor-toolbar">
       <div class="editor-toolbar-row">
-        <button type="button" class="btn btn-play" id="btn-play" disabled>最初から</button>
-        <button type="button" class="btn btn-play btn-play-from" id="btn-play-from" disabled>選択から</button>
+        <button type="button" class="btn btn-play btn-play-icon" id="btn-play" disabled aria-label="最初から" title="最初から">
+          <svg class="icon-play" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M5 4.5v15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            <path d="M9.2 5.8v12.4L19.2 12z" fill="currentColor"/>
+          </svg>
+          <svg class="icon-stop" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" fill="currentColor"/>
+          </svg>
+        </button>
+        <button type="button" class="btn btn-play btn-play-icon" id="btn-play-from" disabled aria-label="印から" title="印から">
+          <svg class="icon-play" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="5.2" cy="12" r="2.15" fill="currentColor"/>
+            <path d="M10.2 5.8v12.4L20.2 12z" fill="currentColor"/>
+          </svg>
+          <svg class="icon-stop" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" fill="currentColor"/>
+          </svg>
+        </button>
+        <span class="editor-sep" aria-hidden="true"></span>
         <label class="editor-field">
           <span class="control-label" id="bpm-label">BPM</span>
-          <input class="num-input" id="bpm" type="number" inputmode="numeric" min="40" max="240" step="1" value="120" aria-labelledby="bpm-label">
+          <input class="num-input" id="bpm" type="text" inputmode="numeric" autocomplete="off" value="120" aria-labelledby="bpm-label">
         </label>
         <label class="editor-field editor-field-meter">
           <span class="control-label" id="numerator-label">拍子</span>
           <span class="editor-meter">
-            <input class="num-input" id="numerator" type="number" inputmode="numeric" min="1" max="16" step="1" value="4" aria-labelledby="numerator-label">
+            <input class="num-input" id="numerator" type="text" inputmode="numeric" autocomplete="off" value="4" aria-labelledby="numerator-label">
             <span>/</span>
-            <select class="select-input" id="denominator" aria-label="拍子の分母">
-              <option value="2">2</option>
-              <option value="4" selected>4</option>
-              <option value="8">8</option>
-              <option value="16">16</option>
-            </select>
+            <input class="num-input" id="denominator" type="text" inputmode="numeric" autocomplete="off" value="4" aria-label="拍子の分母">
           </span>
         </label>
         <label class="editor-field">
           <span class="control-label" id="measures-label">小節</span>
-          <input class="num-input" id="measures" type="number" inputmode="numeric" min="1" max="64" step="1" value="4" aria-labelledby="measures-label">
+          <input class="num-input" id="measures" type="text" inputmode="numeric" autocomplete="off" value="4" aria-labelledby="measures-label">
         </label>
-        <label class="editor-field">
-          <span class="control-label" id="midi-label">高さ</span>
-          <input class="num-input" id="note-midi" type="number" inputmode="numeric" min="0" max="127" step="1" value="60" aria-labelledby="midi-label">
-        </label>
-        <span class="editor-readout" id="note-name">C4 ド</span>
-        <label class="editor-field">
-          <span class="control-label" id="length-label">選択中の長さ</span>
-          <input class="num-input" id="note-length" type="number" inputmode="decimal" min="0.125" max="16" step="any" aria-labelledby="length-label" disabled>
-        </label>
-        <span class="editor-readout" id="length-name">未選択</span>
+        <span class="editor-sep" aria-hidden="true"></span>
         <label class="editor-field editor-field-length">
-          <span class="control-label" id="preset-label">選択中の一覧</span>
-          <select class="select-input" id="length-preset" aria-labelledby="preset-label" disabled>
-            <option value="">選ぶ</option>
-            <optgroup label="音符">
-              <option value="4">4（全音符）</option>
-              <option value="3">3（付点2分音符）</option>
-              <option value="2">2（2分音符）</option>
-              <option value="1.5">1.5（付点4分音符）</option>
-              <option value="1">1（4分音符）</option>
-              <option value="0.75">0.75（付点8分音符）</option>
-              <option value="0.5">0.5（8分音符）</option>
-              <option value="0.375">0.375（付点16分音符）</option>
-              <option value="0.25">0.25（16分音符）</option>
-              <option value="0.125">0.125（32分音符）</option>
-            </optgroup>
-            <optgroup label="3連符">
-              <option value="0.667">0.667（3連符/2分音符）</option>
-              <option value="0.333">0.333（3連符/4分音符）</option>
-              <option value="0.167">0.167（3連符/8分音符）</option>
-            </optgroup>
-          </select>
-        </label>
-        <label class="editor-field">
-          <span class="control-label" id="add-length-label">追加する長さ</span>
-          <input class="num-input" id="add-length" type="number" inputmode="decimal" min="0.125" max="16" step="any" value="1" aria-labelledby="add-length-label">
-        </label>
-        <span class="editor-readout" id="add-length-name">4分音符</span>
-        <label class="editor-field editor-field-length">
-          <span class="control-label" id="add-preset-label">追加の一覧</span>
+          <span class="control-label" id="add-preset-label">クリックで置く音</span>
           <select class="select-input" id="add-length-preset" aria-labelledby="add-preset-label">
             <option value="">選ぶ</option>
             <optgroup label="音符">
@@ -82,7 +77,7 @@
               <option value="1.5">1.5（付点4分音符）</option>
               <option value="1">1（4分音符）</option>
               <option value="0.75">0.75（付点8分音符）</option>
-              <option value="0.5">0.5（8分音符）</option>
+              <option value="0.5" selected>0.5（8分音符）</option>
               <option value="0.375">0.375（付点16分音符）</option>
               <option value="0.25">0.25（16分音符）</option>
               <option value="0.125">0.125（32分音符）</option>
@@ -94,31 +89,81 @@
             </optgroup>
           </select>
         </label>
-        <button type="button" class="btn btn-sub" id="btn-extend" disabled>延長</button>
+        <label class="editor-field editor-field-length">
+          <span class="control-label" id="extend-preset-label">長さ</span>
+          <select class="select-input" id="extend-preset" aria-labelledby="extend-preset-label">
+            <option value="">選ぶ</option>
+            <optgroup label="音符">
+              <option value="4">4（全音符）</option>
+              <option value="3">3（付点2分音符）</option>
+              <option value="2">2（2分音符）</option>
+              <option value="1.5">1.5（付点4分音符）</option>
+              <option value="1">1（4分音符）</option>
+              <option value="0.75">0.75（付点8分音符）</option>
+              <option value="0.5">0.5（8分音符）</option>
+              <option value="0.375">0.375（付点16分音符）</option>
+              <option value="0.25">0.25（16分音符）</option>
+              <option value="0.125">0.125（32分音符）</option>
+            </optgroup>
+            <optgroup label="3連符">
+              <option value="0.667">0.667（3連符/2分音符）</option>
+              <option value="0.333">0.333（3連符/4分音符）</option>
+              <option value="0.167" selected>0.167（3連符/8分音符）</option>
+            </optgroup>
+          </select>
+        </label>
+        <button type="button" class="btn btn-sub" id="btn-set-length" disabled>変更</button>
+        <button type="button" class="btn btn-sub" id="btn-extend" disabled>追加</button>
         <button type="button" class="btn btn-sub" id="btn-snap-end" disabled>末尾へ</button>
-        <button type="button" class="btn btn-sub" id="btn-delete" disabled>消す</button>
-        <p class="page-nav editor-nav"><a href="index.html">ピアノ</a>　<a href="melody.html">メロディ</a>　<a href="pitch.html">音程</a></p>
+        <button type="button" class="btn btn-sub" id="btn-delete" disabled>削除</button>
+        <span class="editor-sep" aria-hidden="true"></span>
+        <span class="editor-tip" data-tip="全体を前へ">
+          <button type="button" class="btn btn-sub btn-tool-icon" id="btn-shift-earlier" disabled aria-label="全体を前へ">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M3.5 5h9.5M3.5 9.5h9.5M3.5 14h6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M17 4.5v11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M13.5 12.8 17 16.6 20.5 12.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+            </svg>
+          </button>
+        </span>
+        <span class="editor-tip" data-tip="全体を後ろへ">
+          <button type="button" class="btn btn-sub btn-tool-icon" id="btn-shift-later" disabled aria-label="全体を後ろへ">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M3.5 10h9.5M3.5 14.5h9.5M3.5 19h6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M17 19.5V8.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M13.5 11.2 17 7.4 20.5 11.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter"/>
+            </svg>
+          </button>
+        </span>
+        <span class="editor-sep" aria-hidden="true"></span>
+        <span class="editor-tip" data-tip="後へ32分足す">
+          <button type="button" class="btn btn-sub btn-tool-icon" id="btn-boundary-add" disabled aria-label="後へ32分足す">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M3 16.5h18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M12 3.5v8.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M7.6 7.6h8.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            </svg>
+          </button>
+        </span>
+        <span class="editor-tip" data-tip="この32分を消す">
+          <button type="button" class="btn btn-sub btn-tool-icon" id="btn-boundary-remove" disabled aria-label="この32分を消す">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M3 16.5h18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M8 4.8 16 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+              <path d="M16 4.8 8 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            </svg>
+          </button>
+        </span>
+        <button type="button" class="btn btn-toggle" id="btn-multi" aria-pressed="false">
+          複数選択
+          <span class="btn-toggle-track" aria-hidden="true"><span class="btn-toggle-knob"></span></span>
+        </button>
       </div>
-      <p class="hint">選択中の長さは、選んでいる音だけを変える。追加する長さは、次に置く音の長さで、選んでいる音は変えない。ドラッグで前の音の終わりに頭が合うと、その前の音の色が変わる。延長は、選択中の音に8分音符の3連符を1つ足す。</p>
-      <details class="json-fold">
-        <summary>JSON</summary>
-        <div class="row-btns">
-          <label class="editor-field editor-field-title">
-            <span class="control-label" for="title">題名</span>
-            <input class="text-input" id="title" type="text" value="無題" maxlength="80" autocomplete="off">
-          </label>
-          <button type="button" class="btn btn-sub" id="btn-apply">このJSONを小節へ</button>
-          <button type="button" class="btn btn-sub" id="btn-save">JSONを保存</button>
-          <button type="button" class="btn btn-sub" id="btn-copy">JSONをコピー</button>
-          <label class="file-btn file-btn-inline">
-            JSONを開く
-            <input type="file" id="json-input" accept="application/json,.json">
-          </label>
-        </div>
-        <textarea class="json-area" id="json-area" spellcheck="false" rows="8" aria-label="メロディのJSON"></textarea>
-        <p class="hint">各音は midi、startMs、durationMs。midi は C4 が 60。単位はミリ秒。画面の BPM と小節から計算する。</p>
-      </details>
-      <p class="status" id="status" role="status"></p>
+      <div hidden>
+        <input id="note-midi" type="number" value="60">
+        <input id="note-length" type="number">
+        <textarea id="json-area"></textarea>
+      </div>
     </header>
 
     <div class="score-scroll" id="score-scroll">
@@ -132,6 +177,17 @@
       </div>
     </div>
   </div>
-  <script src="editor.js"></script>
+  <div class="editor-confirm-backdrop" id="new-backdrop" hidden>
+    <div class="editor-confirm" id="new-dialog" role="dialog" aria-modal="true" aria-labelledby="new-title">
+      <h2 class="editor-confirm-title" id="new-title">JSONを保存しますか</h2>
+      <p class="editor-confirm-text">新規作成すると、音とフレーズは消え、題名は無題、BPMは120、拍子は4/4、小節は4に戻る。</p>
+      <div class="editor-confirm-actions">
+        <button type="button" class="btn btn-sub btn-new-save" id="btn-new-save">保存して新規作成</button>
+        <button type="button" class="btn btn-sub" id="btn-new-discard">保存しない</button>
+        <button type="button" class="btn btn-sub" id="btn-new-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+  <script src="editor.js?v=11"></script>
 </body>
 </html>

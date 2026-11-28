@@ -7,7 +7,10 @@
   var BLACK_PC = { 1: true, 3: true, 6: true, 8: true, 10: true };
   var DENOMS = { 2: true, 4: true, 8: true, 16: true };
   var STORAGE_KEY = "piano-editor";
+  var BREAK_WIDTH = 22;
+  var PHRASE_WIDTH = 28;
   var NUM_WIDTH = 36;
+  var PHRASE_MAX = 99;
 
   var state = {
     title: "無題",
@@ -16,9 +19,14 @@
     denominator: 4,
     measures: 4,
     pitch: 60,
-    lengthQuarters: 1,
+    lengthQuarters: 0.5,
+    extendQuarters: 1 / 6,
+    breakAt: null,
+    phrases: [],
     notes: [],
-    selected: null,
+    selected: [],
+    boundary: null,
+    multi: false,
     seq: 1
   };
 
@@ -30,16 +38,18 @@
   var audioCtx = null;
   var keysByMidi = {};
   var drag = null;
+  var place = null;
+  var hover = null;
   var blockClickUntil = 0;
   var ROW_H = 18;
   var keyBoxes = [];
   var viewReady = false;
   var syncingScroll = false;
+  var copiedNotes = null;
 
   var keyboardEl = document.getElementById("keyboard");
   var wrapEl = document.getElementById("keyboard-wrap");
   var spacerEl = document.getElementById("keyboard-spacer");
-  var statusEl = document.getElementById("status");
   var titleInput = document.getElementById("title");
   var bpmInput = document.getElementById("bpm");
   var numeratorInput = document.getElementById("numerator");
@@ -48,7 +58,6 @@
   var midiInput = document.getElementById("note-midi");
   var lengthInput = document.getElementById("note-length");
   var addLengthInput = document.getElementById("add-length");
-  var noteNameEl = document.getElementById("note-name");
   var lengthNameEl = document.getElementById("length-name");
   var addLengthNameEl = document.getElementById("add-length-name");
   var scoreEl = document.getElementById("score");
@@ -58,13 +67,27 @@
   var btnFrom = document.getElementById("btn-play-from");
   var btnDelete = document.getElementById("btn-delete");
   var btnExtend = document.getElementById("btn-extend");
+  var btnSetLength = document.getElementById("btn-set-length");
   var btnSnapEnd = document.getElementById("btn-snap-end");
+  var btnShiftEarlier = document.getElementById("btn-shift-earlier");
+  var btnShiftLater = document.getElementById("btn-shift-later");
+  var btnBoundaryAdd = document.getElementById("btn-boundary-add");
+  var btnBoundaryRemove = document.getElementById("btn-boundary-remove");
+  var btnMulti = document.getElementById("btn-multi");
   var lengthPreset = document.getElementById("length-preset");
   var addLengthPreset = document.getElementById("add-length-preset");
+  var extendPreset = document.getElementById("extend-preset");
   var btnApply = document.getElementById("btn-apply");
   var btnSave = document.getElementById("btn-save");
   var btnCopy = document.getElementById("btn-copy");
+  var btnNew = document.getElementById("btn-new");
+  var newBackdrop = document.getElementById("new-backdrop");
+  var newDialog = document.getElementById("new-dialog");
+  var btnNewSave = document.getElementById("btn-new-save");
+  var btnNewDiscard = document.getElementById("btn-new-discard");
+  var btnNewCancel = document.getElementById("btn-new-cancel");
   var jsonInput = document.getElementById("json-input");
+  var newReturnFocus = null;
 
   function isBlack(midi) {
     return BLACK_PC[midi % 12] === true;
@@ -102,6 +125,18 @@
     return String(shown);
   }
 
+  function idIgnored(id, ignoreId) {
+    if (ignoreId == null) return false;
+    if (typeof ignoreId === "object" && typeof ignoreId.length === "number") {
+      var i;
+      for (i = 0; i < ignoreId.length; i++) {
+        if (ignoreId[i] === id) return true;
+      }
+      return false;
+    }
+    return ignoreId === id;
+  }
+
   function snapTime(quarters, ignoreId, hold) {
     if (!Number.isFinite(quarters) || quarters < 0) quarters = 0;
     var grid = snap(quarters);
@@ -118,7 +153,7 @@
     if (hold != null) consider(hold);
     var i;
     for (i = 0; i < state.notes.length; i++) {
-      if (ignoreId != null && state.notes[i].id === ignoreId) continue;
+      if (idIgnored(state.notes[i].id, ignoreId)) continue;
       consider(noteAbs(state.notes[i]) + state.notes[i].quarters);
     }
     return best;
@@ -129,7 +164,7 @@
     var i;
     for (i = 0; i < state.notes.length; i++) {
       var note = state.notes[i];
-      if (ignoreId != null && note.id === ignoreId) continue;
+      if (idIgnored(note.id, ignoreId)) continue;
       if (Math.abs(noteAbs(note) + note.quarters - abs) < 1e-4) ids[note.id] = true;
     }
     return ids;
@@ -163,9 +198,7 @@
     return formatQuarters(quarters) + "拍";
   }
 
-  function setStatus(text) {
-    statusEl.textContent = text || "";
-  }
+  function setStatus() {}
 
   function beatsPerMeasure() {
     return state.numerator * (4 / state.denominator);
@@ -192,9 +225,62 @@
     return null;
   }
 
+  function selectedIds() {
+    if (!Array.isArray(state.selected)) return [];
+    return state.selected;
+  }
+
+  function isSelected(id) {
+    id = Number(id);
+    var ids = selectedIds();
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      if (ids[i] === id) return true;
+    }
+    return false;
+  }
+
   function selectedNote() {
-    if (state.selected == null) return null;
-    return findNote(state.selected);
+    var ids = selectedIds();
+    if (!ids.length) return null;
+    return findNote(ids[ids.length - 1]);
+  }
+
+  function selectedNotes() {
+    var out = [];
+    var i;
+    var ids = selectedIds();
+    for (i = 0; i < ids.length; i++) {
+      var note = findNote(ids[i]);
+      if (note) out.push(note);
+    }
+    return out;
+  }
+
+  function selectOnly(id) {
+    state.selected = [Number(id)];
+  }
+
+  function addSelected(id) {
+    id = Number(id);
+    var ids = selectedIds().filter(function (item) {
+      return item !== id;
+    });
+    ids.push(id);
+    state.selected = ids;
+  }
+
+  function removeSelected(id) {
+    id = Number(id);
+    state.selected = selectedIds().filter(function (item) {
+      return item !== id;
+    });
+  }
+
+  function pruneSelection() {
+    state.selected = selectedIds().filter(function (id) {
+      return findNote(id) != null;
+    });
   }
 
   function noteAbs(note) {
@@ -219,6 +305,90 @@
     }
   }
 
+  function writeAbs(note, abs, nb) {
+    if (!(nb > 0)) nb = 4;
+    if (!Number.isFinite(abs) || abs < 0) abs = 0;
+    var measureIndex = Math.floor((abs + 1e-9) / nb);
+    var offset = abs - measureIndex * nb;
+    if (offset >= nb - 1e-9) {
+      measureIndex += 1;
+      offset = 0;
+    }
+    note.measure = measureIndex + 1;
+    note.beat = offset + 1;
+    if (note.measure > 64) {
+      note.measure = 64;
+      note.beat = 1;
+    }
+  }
+
+  function absTooLate(abs, nb) {
+    return abs > 64 * nb - 1e-4;
+  }
+
+  function endPastScore(end, nb) {
+    return Math.ceil(end / nb - 1e-9) > 64;
+  }
+
+  function shiftBlockReason(delta) {
+    var nb = beatsPerMeasure();
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      var start = noteAbs(state.notes[i]) + delta;
+      var end = start + state.notes[i].quarters;
+      if (start < -1e-9) return "0拍より前になるので、動かさなかった。";
+      if (absTooLate(start, nb) || endPastScore(end, nb)) return "64小節を超えるので、動かさなかった。";
+    }
+    for (i = 0; i < state.phrases.length; i++) {
+      var phrase = state.phrases[i] + delta;
+      if (phrase < -1e-9) return "0拍より前になるので、動かさなかった。";
+      if (absTooLate(phrase, nb)) return "64小節を超えるので、動かさなかった。";
+    }
+    if (state.breakAt != null) {
+      var mark = state.breakAt + delta;
+      if (mark < -1e-9) return "0拍より前になるので、動かさなかった。";
+      if (absTooLate(mark, nb)) return "64小節を超えるので、動かさなかった。";
+    }
+    return "";
+  }
+
+  function clampDeltaTime(starts, lengths, ids, dTime, nb) {
+    var startCap = 64 * nb - 1e-4;
+    var endCap = 64 * nb;
+    var minDelta = -Infinity;
+    var maxDelta = Infinity;
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var start = starts[ids[i]];
+      var len = lengths[ids[i]];
+      if (start == null) continue;
+      if (len == null) len = 0;
+      if (-start > minDelta) minDelta = -start;
+      if (startCap - start < maxDelta) maxDelta = startCap - start;
+      if (endCap - (start + len) < maxDelta) maxDelta = endCap - (start + len);
+    }
+    if (maxDelta < minDelta) return 0;
+    if (dTime > maxDelta) dTime = maxDelta;
+    if (dTime < minDelta) dTime = minDelta;
+    return dTime;
+  }
+
+  function clampDeltaMidi(midis, ids, dMidi) {
+    var minDelta = -Infinity;
+    var maxDelta = Infinity;
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var midi = midis[ids[i]];
+      if (midi == null) continue;
+      if (-midi > minDelta) minDelta = -midi;
+      if (127 - midi < maxDelta) maxDelta = 127 - midi;
+    }
+    if (maxDelta < minDelta) return 0;
+    if (dMidi > maxDelta) dMidi = maxDelta;
+    if (dMidi < minDelta) dMidi = minDelta;
+    return dMidi;
+  }
+
   function occupiedMeasures() {
     var m = 0;
     var nb = beatsPerMeasure();
@@ -226,6 +396,10 @@
       if (note.measure > m) m = note.measure;
       var end = noteAbs(note) + note.quarters;
       var last = Math.ceil(end / nb - 1e-9);
+      if (last > m) m = last;
+    });
+    state.phrases.forEach(function (abs) {
+      var last = Math.ceil((abs + STEP) / nb - 1e-9);
       if (last > m) m = last;
     });
     return m;
@@ -258,13 +432,60 @@
     notes.sort(function (a, b) {
       return a.startMs - b.startMs || a.midi - b.midi;
     });
-    return {
+    var body = {
       title: state.title || "無題",
       bpm: state.bpm,
       numerator: state.numerator,
       denominator: state.denominator,
       notes: notes
     };
+    var phrases = exportedPhrases(qms);
+    if (phrases.length) body.phrases = phrases;
+    return body;
+  }
+
+  function exportedPhrases(qms) {
+    var starts = state.phrases.slice().sort(function (a, b) {
+      return a - b;
+    });
+    if (!starts.length) return [];
+    var noteEnd = 0;
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      var end = noteAbs(state.notes[i]) + state.notes[i].quarters;
+      if (end > noteEnd) noteEnd = end;
+    }
+    var stepMs = round1(STEP * qms);
+    if (stepMs <= 0) stepMs = 1;
+    return starts.map(function (start, index) {
+      var endQ = index + 1 < starts.length ? starts[index + 1] : Math.max(noteEnd, start);
+      var startMs = round1(start * qms);
+      var endMs = round1(endQ * qms);
+      if (endMs <= startMs) endMs = round1(startMs + stepMs);
+      return {
+        name: "フレーズ" + phraseNumber(index),
+        startMs: startMs,
+        endMs: endMs
+      };
+    });
+  }
+
+  function togglePhrase(abs) {
+    var i;
+    for (i = 0; i < state.phrases.length; i++) {
+      if (samePhraseTime(state.phrases[i], abs)) {
+        state.phrases.splice(i, 1);
+        setStatus("");
+        return;
+      }
+    }
+    if (state.phrases.length >= PHRASE_MAX) {
+      setStatus("フレーズは99まで。");
+      return;
+    }
+    state.phrases.push(abs);
+    sortPhrases();
+    setStatus("");
   }
 
   function refreshJson() {
@@ -283,6 +504,9 @@
           measures: state.measures,
           pitch: state.pitch,
           lengthQuarters: state.lengthQuarters,
+          extendQuarters: state.extendQuarters,
+          breakAt: state.breakAt,
+          phrases: state.phrases.slice(),
           notes: state.notes.map(function (note) {
             return {
               id: note.id,
@@ -325,6 +549,25 @@
     return null;
   }
 
+  function sideWidth() {
+    return BREAK_WIDTH + PHRASE_WIDTH + NUM_WIDTH;
+  }
+
+  function phraseNumber(index) {
+    var n = index + 1;
+    return (n < 10 ? "0" : "") + n;
+  }
+
+  function samePhraseTime(a, b) {
+    return Math.abs(a - b) < 1e-4;
+  }
+
+  function sortPhrases() {
+    state.phrases.sort(function (a, b) {
+      return a - b;
+    });
+  }
+
   function gridEl() {
     return document.getElementById("roll-grid");
   }
@@ -364,6 +607,174 @@
     return whites[whites.length - 1].midi;
   }
 
+  function cellFloor(quarters) {
+    if (!Number.isFinite(quarters) || quarters < 0) return 0;
+    var n = Math.floor(quarters / STEP + 1e-9);
+    if (n < 0) n = 0;
+    var maxN = Math.round((64 * beatsPerMeasure()) / STEP) - 1;
+    if (maxN < 0) maxN = 0;
+    if (n > maxN) n = maxN;
+    return snap(n * STEP);
+  }
+
+  function shownMeasures() {
+    var n = state.measures;
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n < 64) return n + 1;
+    return 64;
+  }
+
+  function coversCell(midi, abs) {
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      var note = state.notes[i];
+      if (note.midi !== midi) continue;
+      var start = noteAbs(note);
+      if (abs < start - 1e-6) continue;
+      if (abs < start + note.quarters - 1e-6) return true;
+    }
+    return false;
+  }
+
+  function clampToShown(abs) {
+    var max = snap(shownMeasures() * beatsPerMeasure() - STEP);
+    if (!(max > 0)) max = 0;
+    if (abs > max) return max;
+    if (abs < 0) return 0;
+    return abs;
+  }
+
+  function cellAt(clientX, clientY, outside) {
+    var grid = gridEl();
+    if (!grid) return null;
+    var rect = grid.getBoundingClientRect();
+    if (!outside) {
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    }
+    var abs = cellFloor(timeFromClientY(clientY));
+    if (!outside) abs = clampToShown(abs);
+    return { midi: midiFromClientX(clientX), abs: abs };
+  }
+
+  function spanOf(origin, current) {
+    var low = Math.min(origin, current);
+    var high = Math.max(origin, current);
+    var quarters = snap(high - low + STEP);
+    var start = low;
+    var capped = false;
+    if (!Number.isFinite(quarters) || quarters < STEP) quarters = STEP;
+    if (quarters > 16) {
+      capped = true;
+      quarters = 16;
+      if (current >= origin) start = origin;
+      else start = snap(origin + STEP - quarters);
+      if (start < 0) start = 0;
+    }
+    return { start: start, quarters: quarters, capped: capped };
+  }
+
+  function hoverBoxes(midi) {
+    var box = boxFor(midi);
+    if (!box) return [];
+    if (box.black) return [{ left: box.left, width: box.width }];
+    var cuts = [];
+    var i;
+    for (i = 0; i < keyBoxes.length; i++) {
+      var other = keyBoxes[i];
+      if (!other.black) continue;
+      var left = other.left > box.left ? other.left : box.left;
+      var boxRight = box.left + box.width;
+      var otherRight = other.left + other.width;
+      var right = otherRight < boxRight ? otherRight : boxRight;
+      if (right - left > 0.5) cuts.push({ left: left, right: right });
+    }
+    if (!cuts.length) return [{ left: box.left, width: box.width }];
+    cuts.sort(function (a, b) {
+      return a.left - b.left;
+    });
+    var segments = [];
+    var x = box.left;
+    var end = box.left + box.width;
+    for (i = 0; i < cuts.length; i++) {
+      if (cuts[i].left > x + 0.5) segments.push({ left: x, width: cuts[i].left - x });
+      if (cuts[i].right > x) x = cuts[i].right;
+    }
+    if (end > x + 0.5) segments.push({ left: x, width: end - x });
+    return segments;
+  }
+
+  function paintKeyHover() {
+    var spanning = place && Math.abs(place.current - place.origin) > 1e-6;
+    var midi = hover && !drag && !spanning ? hover.midi : null;
+    Object.keys(keysByMidi).forEach(function (key) {
+      keysByMidi[key].classList.toggle("is-roll-hover", Number(key) === midi);
+    });
+  }
+
+  function paintHover() {
+    paintKeyHover();
+    var grid = gridEl();
+    if (!grid) return;
+    var nodes = grid.querySelectorAll(".roll-hover");
+    var spanning = place && Math.abs(place.current - place.origin) > 1e-6;
+    var show = hover && !drag && !spanning;
+    if (!show) {
+      nodes.forEach(function (el) {
+        el.remove();
+      });
+      return;
+    }
+    var segments = hoverBoxes(hover.midi);
+    var i;
+    if (nodes.length !== segments.length) {
+      nodes.forEach(function (el) {
+        el.remove();
+      });
+      nodes = [];
+      for (i = 0; i < segments.length; i++) {
+        var created = document.createElement("div");
+        created.className = "roll-hover";
+        created.setAttribute("aria-hidden", "true");
+        grid.appendChild(created);
+        nodes.push(created);
+      }
+    }
+    for (i = 0; i < segments.length; i++) {
+      nodes[i].style.left = segments[i].left + "px";
+      nodes[i].style.width = segments[i].width + "px";
+      nodes[i].style.bottom = (hover.abs / STEP) * ROW_H + "px";
+      nodes[i].style.height = ROW_H + "px";
+    }
+  }
+
+  function updatePlacePreview() {
+    var grid = gridEl();
+    if (!grid) return;
+    var el = document.getElementById("roll-place");
+    if (!place || Math.abs(place.current - place.origin) < 1e-6) {
+      if (el) el.remove();
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "roll-place";
+      el.className = "roll-place";
+      el.setAttribute("aria-hidden", "true");
+      grid.appendChild(el);
+    }
+    var box = boxFor(place.midi);
+    var span = spanOf(place.origin, place.current);
+    el.style.left = (box ? box.left : 0) + "px";
+    el.style.width = (box ? box.width : 22) + "px";
+    el.style.bottom = (span.start / STEP) * ROW_H + "px";
+    el.style.height = Math.max(ROW_H, (span.quarters / STEP) * ROW_H) + "px";
+  }
+
+  function syncOverlays() {
+    paintHover();
+    updatePlacePreview();
+  }
+
   function scrollTimeIntoView(quarters) {
     var grid = gridEl();
     if (!grid) return;
@@ -378,15 +789,51 @@
     var stickBottom = scoreScroll.scrollHeight - scoreScroll.scrollTop - scoreScroll.clientHeight;
     var width = measureKeys();
     var nb = beatsPerMeasure();
-    var rows = Math.max(1, Math.round((state.measures * nb) / STEP));
+    var shown = shownMeasures();
+    var rows = Math.max(1, Math.round((shown * nb) / STEP));
     var beatRows = Math.max(1, Math.round((4 / state.denominator) / STEP));
     var rowsPerMeasure = Math.max(1, Math.round(nb / STEP));
     scoreEl.textContent = "";
     var roll = document.createElement("div");
     roll.className = "roll";
+    var breakCol = document.createElement("div");
+    breakCol.className = "roll-break";
+    breakCol.style.width = BREAK_WIDTH + "px";
+    breakCol.setAttribute("role", "group");
+    breakCol.setAttribute("aria-label", state.breakAt == null ? "再生を始める位置" : "再生を始める位置、" + formatQuarters(state.breakAt) + "拍");
+    if (state.breakAt != null) {
+      var breakMark = document.createElement("div");
+      breakMark.className = "roll-break-mark";
+      breakMark.style.bottom = ((state.breakAt / STEP) * ROW_H + (ROW_H - 12) / 2) + "px";
+      breakMark.setAttribute("aria-hidden", "true");
+      breakCol.appendChild(breakMark);
+    }
+    var phraseCol = document.createElement("div");
+    phraseCol.className = "roll-phrase";
+    phraseCol.style.width = PHRASE_WIDTH + "px";
+    phraseCol.style.left = BREAK_WIDTH + "px";
+    phraseCol.setAttribute("role", "group");
+    var phraseLabel = "フレーズの開始";
+    if (state.phrases.length) {
+      phraseLabel += "。" + state.phrases.map(function (abs, index) {
+        return "フレーズ" + phraseNumber(index) + "は" + formatQuarters(abs) + "拍";
+      }).join("、");
+    }
+    phraseCol.setAttribute("aria-label", phraseLabel);
+    state.phrases.forEach(function (abs, index) {
+      var phraseMark = document.createElement("div");
+      phraseMark.className = "roll-phrase-mark";
+      phraseMark.style.bottom = ((abs / STEP) * ROW_H + (ROW_H - 16) / 2) + "px";
+      phraseMark.textContent = phraseNumber(index);
+      phraseMark.setAttribute("aria-hidden", "true");
+      phraseCol.appendChild(phraseMark);
+    });
     var gutter = document.createElement("div");
     gutter.className = "roll-gutter";
     gutter.style.width = NUM_WIDTH + "px";
+    gutter.style.left = (BREAK_WIDTH + PHRASE_WIDTH) + "px";
+    gutter.setAttribute("role", "group");
+    gutter.setAttribute("aria-label", state.boundary == null ? "境目" : "境目、" + formatQuarters(state.boundary) + "拍");
     var grid = document.createElement("div");
     grid.className = "roll-grid";
     grid.id = "roll-grid";
@@ -403,28 +850,47 @@
       col.style.width = box.width + "px";
       grid.appendChild(col);
     }
-    for (i = beatRows; i <= rows; i += beatRows) {
+    var eighthRows = Math.max(1, Math.round(0.5 / STEP));
+    var halfRows = Math.round(rowsPerMeasure / 2);
+    for (i = 1; i <= rows; i++) {
+      var onMeasure = i % rowsPerMeasure === 0;
+      var onHalf = halfRows > 0 && i % rowsPerMeasure === halfRows;
+      var onBeat = i % beatRows === 0;
+      var onEighth = i % eighthRows === 0;
+      if (!onMeasure && !onHalf && !onBeat && !onEighth) continue;
       var line = document.createElement("div");
-      line.className = "roll-line" + (i % rowsPerMeasure === 0 ? " is-measure" : "");
+      var kind = "";
+      if (onMeasure) kind = " is-measure";
+      else if (onHalf) kind = " is-half";
+      else if (onEighth && !onBeat) kind = " is-eighth";
+      line.className = "roll-line" + kind;
       line.style.bottom = i * ROW_H + "px";
       grid.appendChild(line);
     }
     var m;
-    var beatQuarters = 4 / state.denominator;
-    for (m = 1; m <= state.measures; m++) {
-      var b;
-      for (b = 0; b < state.numerator; b++) {
-        var mark = document.createElement("span");
-        mark.className = b === 0 ? "roll-measure-no" : "roll-beat-no";
-        mark.textContent = b === 0 ? String(m) : String(b + 1);
-        mark.style.bottom = (((m - 1) * nb + b * beatQuarters) / STEP) * ROW_H + "px";
-        gutter.appendChild(mark);
-      }
+    for (m = 1; m <= shown; m++) {
+      var mark = document.createElement("span");
+      mark.className = "roll-measure-no";
+      mark.textContent = String(m);
+      mark.style.bottom = (((m - 1) * nb) / STEP) * ROW_H + "px";
+      gutter.appendChild(mark);
+    }
+    if (state.boundary != null) {
+      var gutterLine = document.createElement("div");
+      gutterLine.className = "roll-gutter-boundary";
+      gutterLine.style.bottom = (state.boundary / STEP) * ROW_H + "px";
+      gutterLine.setAttribute("aria-hidden", "true");
+      gutter.appendChild(gutterLine);
+      var boundaryLine = document.createElement("div");
+      boundaryLine.className = "roll-boundary";
+      boundaryLine.style.bottom = (state.boundary / STEP) * ROW_H + "px";
+      boundaryLine.setAttribute("aria-hidden", "true");
+      grid.appendChild(boundaryLine);
     }
     var snapIds = null;
-    if (drag && drag.mode !== "end") {
+    if (drag && drag.moved && drag.mode !== "end") {
       var moving = findNote(drag.id);
-      if (moving) snapIds = noteIdsEndingAt(noteAbs(moving), drag.id);
+      if (moving) snapIds = noteIdsEndingAt(noteAbs(moving), drag.ids || drag.id);
     }
     state.notes.forEach(function (note) {
       var noteBox = boxFor(note.midi);
@@ -432,8 +898,9 @@
       var block = document.createElement("div");
       block.className = "score-note";
       if (noteBox && noteBox.black) block.classList.add("is-black");
-      if (note.id === state.selected) block.classList.add("is-selected");
-      if (drag && drag.id === note.id) block.classList.add("is-dragging");
+      if (isSelected(note.id)) block.classList.add("is-selected");
+      if (drag && drag.mode === "move" && drag.ids && drag.ids.indexOf(note.id) >= 0) block.classList.add("is-dragging");
+      else if (drag && drag.mode !== "move" && drag.id === note.id) block.classList.add("is-dragging");
       if (snapIds && snapIds[note.id]) block.classList.add("is-snap-target");
       block.dataset.id = String(note.id);
       block.style.left = (noteBox ? noteBox.left : 0) + "px";
@@ -464,11 +931,13 @@
     head.id = "roll-playhead";
     head.hidden = true;
     grid.appendChild(head);
+    roll.appendChild(breakCol);
+    roll.appendChild(phraseCol);
     roll.appendChild(gutter);
     roll.appendChild(grid);
     scoreEl.appendChild(roll);
-    spacerEl.style.flex = "0 0 " + NUM_WIDTH + "px";
-    spacerEl.style.width = NUM_WIDTH + "px";
+    spacerEl.style.flex = "0 0 " + sideWidth() + "px";
+    spacerEl.style.width = sideWidth() + "px";
     if (!viewReady) {
       scoreScroll.scrollTop = scoreScroll.scrollHeight;
       viewReady = true;
@@ -478,6 +947,7 @@
       scoreScroll.scrollTop = next;
     }
     matchScrollBar();
+    syncOverlays();
   }
 
   function alignGrid() {
@@ -486,8 +956,8 @@
     var grid = gridEl();
     if (!grid) return;
     grid.style.width = width + "px";
-    spacerEl.style.flex = "0 0 " + NUM_WIDTH + "px";
-    spacerEl.style.width = NUM_WIDTH + "px";
+    spacerEl.style.flex = "0 0 " + sideWidth() + "px";
+    spacerEl.style.width = sideWidth() + "px";
     grid.querySelectorAll(".roll-col").forEach(function (col) {
       var box = boxFor(Number(col.dataset.midi));
       if (!box) return;
@@ -502,6 +972,7 @@
       el.style.width = (box ? box.width : 22) + "px";
     });
     matchScrollBar();
+    syncOverlays();
   }
 
   function matchScrollBar() {
@@ -519,21 +990,14 @@
     var note = selectedNote();
     var midi = note ? note.midi : state.pitch;
     setIfIdle(midiInput, String(midi));
-    noteNameEl.textContent = midiLabel(midi);
-    if (note) {
-      setIfIdle(lengthInput, formatQuarters(note.quarters));
-      lengthNameEl.textContent = lengthName(note.quarters);
-      lengthInput.disabled = false;
-      lengthPreset.disabled = false;
-    } else {
-      lengthInput.value = "";
-      lengthNameEl.textContent = "未選択";
-      lengthInput.disabled = true;
-      lengthPreset.disabled = true;
+    if (lengthInput) {
+      if (note) setIfIdle(lengthInput, formatQuarters(note.quarters));
+      else lengthInput.value = "";
     }
-    setIfIdle(addLengthInput, formatQuarters(state.lengthQuarters));
-    addLengthNameEl.textContent = lengthName(state.lengthQuarters);
-    btnDelete.disabled = !note;
+    if (lengthPreset) lengthPreset.disabled = !note;
+    syncLengthPreset(addLengthPreset, state.lengthQuarters);
+    syncLengthPreset(extendPreset, state.extendQuarters);
+    btnDelete.disabled = selectedIds().length === 0;
   }
 
   function markPitch(scrollKey) {
@@ -550,16 +1014,29 @@
   }
 
   function updatePlayButtons() {
-    btnPlay.textContent = playing && playMode === "start" ? "停止" : "最初から";
-    btnFrom.textContent = playing && playMode === "from" ? "停止" : "選択から";
+    var startLabel = playing && playMode === "start" ? "停止" : "最初から";
+    var fromLabel = playing && playMode === "from" ? "停止" : "印から";
+    btnPlay.setAttribute("aria-label", startLabel);
+    btnFrom.setAttribute("aria-label", fromLabel);
+    btnPlay.title = startLabel;
+    btnFrom.title = fromLabel;
     btnPlay.classList.toggle("is-playing", playing && playMode === "start");
     btnFrom.classList.toggle("is-playing", playing && playMode === "from");
     btnPlay.setAttribute("aria-pressed", playing && playMode === "start" ? "true" : "false");
     btnFrom.setAttribute("aria-pressed", playing && playMode === "from" ? "true" : "false");
     btnPlay.disabled = state.notes.length === 0;
-    btnFrom.disabled = !selectedNote() || state.notes.length === 0;
-    btnExtend.disabled = !selectedNote();
-    btnSnapEnd.disabled = !selectedNote() || state.notes.length < 2;
+    btnFrom.disabled = state.breakAt == null || state.notes.length === 0;
+    var hasSelection = selectedIds().length > 0;
+    btnExtend.disabled = !hasSelection;
+    btnSetLength.disabled = !hasSelection;
+    btnSnapEnd.disabled = !hasSelection || state.notes.length < 2;
+    var canShift = state.notes.length > 0 || state.phrases.length > 0 || state.breakAt != null;
+    btnShiftEarlier.disabled = !canShift;
+    btnShiftLater.disabled = !canShift;
+    btnBoundaryAdd.disabled = state.boundary == null;
+    btnBoundaryRemove.disabled = state.boundary == null;
+    btnMulti.classList.toggle("is-on", state.multi);
+    btnMulti.setAttribute("aria-pressed", state.multi ? "true" : "false");
   }
 
   function updateChrome() {
@@ -610,10 +1087,56 @@
       beat: beat,
       quarters: state.lengthQuarters
     });
-    state.selected = id;
+    selectOnly(id);
     if (measure > state.measures) state.measures = measure;
     stopPlayback();
     renderAll();
+  }
+
+  function placeNote(abs, quarters, midi, capped) {
+    if (state.notes.length >= 500) {
+      setStatus("音は500まで。");
+      renderGrid();
+      return;
+    }
+    var nb = beatsPerMeasure();
+    var maxStart = 64 * nb;
+    if (!Number.isFinite(abs) || abs < 0) abs = 0;
+    if (abs > maxStart) abs = maxStart;
+    if (!Number.isFinite(quarters) || quarters < STEP) quarters = STEP;
+    if (quarters > 16) {
+      quarters = 16;
+      capped = true;
+    }
+    quarters = musicalTime(quarters);
+    if (quarters < STEP) quarters = STEP;
+    if (quarters > 16) quarters = 16;
+    midi = Math.round(Number(midi));
+    if (!Number.isInteger(midi) || midi < 0 || midi > 127) midi = state.pitch;
+    var id = state.seq++;
+    var note = { id: id, midi: midi, measure: 1, beat: 1, quarters: quarters };
+    applyAbs(note, abs, nb);
+    note.quarters = quarters;
+    state.notes.push(note);
+    selectOnly(id);
+    state.pitch = midi;
+    if (note.measure > state.measures) state.measures = note.measure;
+    stopPlayback();
+    renderAll();
+    setStatus(capped ? "長さは16拍まで。" : "");
+  }
+
+  function placeAtPointer(clientX, clientY) {
+    var cell = cellAt(clientX, clientY, false);
+    if (!cell) return;
+    var nb = beatsPerMeasure();
+    var measure = Math.floor((cell.abs + 1e-6) / nb) + 1;
+    if (measure > 64) measure = 64;
+    var beat = musicalTime(cell.abs - (measure - 1) * nb + 1);
+    if (beat < 1) beat = 1;
+    state.pitch = cell.midi;
+    setStatus("");
+    addNote(measure, beat);
   }
 
   function removeNote(id) {
@@ -621,7 +1144,7 @@
     state.notes = state.notes.filter(function (note) {
       return note.id !== id;
     });
-    if (state.selected === id) state.selected = null;
+    removeSelected(id);
     stopPlayback();
     renderAll();
   }
@@ -653,12 +1176,22 @@
         durationMs: durationMs
       };
     });
+    var phraseStarts = [];
+    if (Array.isArray(data.phrases)) {
+      data.phrases.forEach(function (p) {
+        if (!p || typeof p !== "object") return;
+        var startMs = Number(p.startMs);
+        if (!Number.isFinite(startMs) || startMs < 0) return;
+        phraseStarts.push(startMs);
+      });
+    }
     return {
       title: title,
       bpm: Number(data.bpm),
       numerator: Number(data.numerator),
       denominator: Number(data.denominator),
-      notes: notes
+      notes: notes,
+      phraseStarts: phraseStarts
     };
   }
 
@@ -686,8 +1219,29 @@
       return note;
     });
     state.seq = state.notes.length + 1;
-    state.selected = null;
+    state.selected = [];
+    state.boundary = null;
     state.title = data.title;
+    var starts = [];
+    var maxAbs = snap(64 * nb - STEP);
+    if (!(maxAbs > 0)) maxAbs = 0;
+    (data.phraseStarts || []).forEach(function (ms) {
+      var raw = ms / qms;
+      var abs = musicalTime(raw);
+      if (!Number.isFinite(abs) || abs < 0) return;
+      if (Math.abs(raw - abs) > 0.02) snapped = true;
+      if (abs > maxAbs) abs = maxAbs;
+      var j;
+      for (j = 0; j < starts.length; j++) {
+        if (samePhraseTime(starts[j], abs)) return;
+      }
+      if (starts.length >= PHRASE_MAX) return;
+      starts.push(abs);
+    });
+    starts.sort(function (a, b) {
+      return a - b;
+    });
+    state.phrases = starts;
     var need = occupiedMeasures();
     if (need > state.measures) state.measures = need;
     if (state.measures < 1) state.measures = 1;
@@ -732,6 +1286,27 @@
       if (Number.isInteger(pitch) && pitch >= 0 && pitch <= 127) state.pitch = pitch;
       var len = musicalTime(data.lengthQuarters);
       if (Number.isFinite(len) && len >= STEP && len <= 16) state.lengthQuarters = len;
+      var ext = musicalTime(data.extendQuarters);
+      if (Number.isFinite(ext) && ext >= STEP && ext <= 16) state.extendQuarters = ext;
+      if (data.breakAt == null || data.breakAt === "") state.breakAt = null;
+      else {
+        var br = musicalTime(Number(data.breakAt));
+        if (Number.isFinite(br) && br >= 0) state.breakAt = br;
+      }
+      state.phrases = [];
+      if (Array.isArray(data.phrases)) {
+        data.phrases.forEach(function (q) {
+          var abs = musicalTime(Number(q));
+          if (!Number.isFinite(abs) || abs < 0) return;
+          var j;
+          for (j = 0; j < state.phrases.length; j++) {
+            if (samePhraseTime(state.phrases[j], abs)) return;
+          }
+          if (state.phrases.length >= PHRASE_MAX) return;
+          state.phrases.push(abs);
+        });
+        sortPhrases();
+      }
       if (!Array.isArray(data.notes)) return;
       var maxId = 0;
       state.notes = [];
@@ -739,17 +1314,18 @@
         if (!n) return;
         var midi = Math.round(Number(n.midi));
         var measure = Math.round(Number(n.measure));
-        var beat = musicalTime(n.beat);
-        var quarters = musicalTime(n.quarters);
+        var beat = Number(n.beat);
+        var quarters = Number(n.quarters);
         if (midi < 0 || midi > 127) return;
         if (measure < 1 || measure > 64) return;
         if (!Number.isFinite(beat) || beat < 1) return;
         if (!Number.isFinite(quarters) || quarters < STEP) return;
+        if (quarters > 16) quarters = 16;
         var id = Number(n.id);
         if (!Number.isInteger(id) || id < 1) id = state.notes.length + 1;
         if (id > maxId) maxId = id;
         var note = { id: id, midi: midi, measure: measure, beat: beat, quarters: quarters };
-        applyAbs(note, (measure - 1) * beatsPerMeasure() + (beat - 1), beatsPerMeasure());
+        writeAbs(note, (measure - 1) * beatsPerMeasure() + (beat - 1), beatsPerMeasure());
         note.quarters = quarters;
         state.notes.push(note);
       });
@@ -955,7 +1531,6 @@
     var note = selectedNote();
     if (note) note.midi = midi;
     midiInput.value = String(midi);
-    noteNameEl.textContent = midiLabel(midi);
     if (note) {
       renderGrid();
       refreshJson();
@@ -982,6 +1557,10 @@
     else if (e.clientX > rect.right - 28) scoreScroll.scrollLeft += 18;
   }
 
+  function pointerAdds(e) {
+    return state.multi || e.shiftKey || e.ctrlKey || e.metaKey;
+  }
+
   function onScoreDown(e) {
     var noteEl = e.target.closest(".score-note");
     if (!noteEl || !scoreEl.contains(noteEl)) return;
@@ -989,43 +1568,188 @@
     e.preventDefault();
     var note = findNote(noteEl.dataset.id);
     if (!note) return;
-    state.selected = note.id;
+    var edge = e.target.closest("[data-edge]");
+    var adds = pointerAdds(e);
+    var already = isSelected(note.id);
+    var toggleOff = false;
+    if (edge) {
+      if (already) addSelected(note.id);
+      else selectOnly(note.id);
+    } else if (adds) {
+      if (already) {
+        addSelected(note.id);
+        toggleOff = true;
+      } else addSelected(note.id);
+    } else if (!already) {
+      selectOnly(note.id);
+    } else {
+      addSelected(note.id);
+    }
     state.pitch = note.midi;
     blockClickUntil = Date.now() + 400;
     syncSelectionFields();
     updatePlayButtons();
-    var edge = e.target.closest("[data-edge]");
+    var ids = edge ? [note.id] : selectedIds().slice();
+    var starts = {};
+    var midis = {};
+    var lengths = {};
+    var i;
+    for (i = 0; i < ids.length; i++) {
+      var item = findNote(ids[i]);
+      if (!item) continue;
+      starts[item.id] = noteAbs(item);
+      midis[item.id] = item.midi;
+      lengths[item.id] = item.quarters;
+    }
     drag = {
       pointerId: e.pointerId,
       mode: edge ? edge.dataset.edge : "move",
       id: note.id,
+      ids: ids,
+      starts: starts,
+      midis: midis,
+      lengths: lengths,
       startAbs: noteAbs(note),
       startQuarters: note.quarters,
       grab: timeFromClientY(e.clientY) - noteAbs(note),
-      moved: false
+      originX: e.clientX,
+      originY: e.clientY,
+      moved: false,
+      toggleOff: !edge && toggleOff,
+      plainCollapse: !edge && !adds && already && selectedIds().length > 1
     };
     if (scoreEl.setPointerCapture) scoreEl.setPointerCapture(e.pointerId);
+    hover = null;
     stopPlayback();
     renderDrag();
+  }
+
+  function onGridDown(e) {
+    if (place || drag) return;
+    if (e.button != null && e.button !== 0) return;
+    if (e.target.closest(".score-note")) return;
+    var grid = e.target.closest(".roll-grid");
+    if (!grid || !scoreEl.contains(grid)) return;
+    var cell = cellAt(e.clientX, e.clientY, false);
+    if (!cell) return;
+    place = {
+      pointerId: e.pointerId,
+      midi: cell.midi,
+      origin: cell.abs,
+      current: cell.abs,
+      measures: state.measures
+    };
+    if (scoreEl.setPointerCapture) scoreEl.setPointerCapture(e.pointerId);
+  }
+
+  function releasePlacePointer(e) {
+    if (!scoreEl.releasePointerCapture || e.pointerId == null) return;
+    try {
+      scoreEl.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+  }
+
+  function restorePlaceMeasures() {
+    if (!place) return;
+    if (state.measures === place.measures) return;
+    state.measures = place.measures;
+    measuresInput.value = String(state.measures);
+  }
+
+  function onPlaceMove(e) {
+    if (!place || e.pointerId !== place.pointerId) return;
+    autoScroll(e);
+    var cell = cellAt(e.clientX, e.clientY, true);
+    if (!cell) return;
+    place.current = cell.abs;
+    if (Math.abs(place.current - place.origin) < 1e-6) hover = { midi: cell.midi, abs: cell.abs };
+    else hover = null;
+    var floorMeasures = place.measures;
+    var nb = beatsPerMeasure();
+    var span = spanOf(place.origin, place.current);
+    var need = Math.ceil((span.start + span.quarters) / nb - 1e-9);
+    if (need < floorMeasures) need = floorMeasures;
+    if (need > 64) need = 64;
+    if (need !== state.measures) {
+      state.measures = need;
+      measuresInput.value = String(need);
+      renderGrid();
+      return;
+    }
+    syncOverlays();
+  }
+
+  function onPlaceUp(e) {
+    if (!place || (e.pointerId != null && e.pointerId !== place.pointerId)) return;
+    var moved = Math.abs(place.current - place.origin) > 1e-6;
+    var origin = place.origin;
+    var current = place.current;
+    var midi = place.midi;
+    restorePlaceMeasures();
+    place = null;
+    releasePlacePointer(e);
+    blockClickUntil = Date.now() + 400;
+    if (!moved) {
+      var grid = gridEl();
+      var rect = grid ? grid.getBoundingClientRect() : null;
+      var inside = rect && e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) {
+        renderGrid();
+        return;
+      }
+      placeAtPointer(e.clientX, e.clientY);
+      return;
+    }
+    var span = spanOf(origin, current);
+    placeNote(span.start, span.quarters, midi, span.capped);
+  }
+
+  function onPlaceCancel(e) {
+    if (!place || (e.pointerId != null && e.pointerId !== place.pointerId)) return;
+    restorePlaceMeasures();
+    place = null;
+    releasePlacePointer(e);
+    blockClickUntil = Date.now() + 400;
+    renderGrid();
+  }
+
+  function onHoverMove(e) {
+    if (drag || place) return;
+    var cell = cellAt(e.clientX, e.clientY, false);
+    if (!cell || coversCell(cell.midi, cell.abs)) {
+      if (!hover) return;
+      hover = null;
+      paintHover();
+      return;
+    }
+    if (hover && hover.midi === cell.midi && Math.abs(hover.abs - cell.abs) < 1e-6) return;
+    hover = cell;
+    paintHover();
   }
 
   function onScoreMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     var note = findNote(drag.id);
     if (!note) return;
+    if (Math.abs(e.clientX - drag.originX) > 3 || Math.abs(e.clientY - drag.originY) > 3) drag.moved = true;
     var nb = beatsPerMeasure();
     var abs = timeFromClientY(e.clientY);
     if (drag.mode === "move") {
-      var start = snapTime(abs - drag.grab, note.id, drag.startAbs);
-      if (start < 0) start = 0;
-      var maxStart = 64 * nb;
-      if (start > maxStart) start = maxStart;
-      if (Math.abs(start - noteAbs(note)) > 1e-6) drag.moved = true;
-      applyAbs(note, start, nb);
+      var snapped = snapTime(abs - drag.grab, drag.ids, drag.starts[drag.id]);
+      var dTime = snapped - drag.starts[drag.id];
       var midi = midiFromClientX(e.clientX);
-      if (midi !== note.midi) drag.moved = true;
-      note.midi = midi;
-      state.pitch = midi;
+      var dMidi = midi - drag.midis[drag.id];
+      dTime = clampDeltaTime(drag.starts, drag.lengths, drag.ids, dTime, nb);
+      dMidi = clampDeltaMidi(drag.midis, drag.ids, dMidi);
+      var k;
+      for (k = 0; k < drag.ids.length; k++) {
+        var item = findNote(drag.ids[k]);
+        if (!item) continue;
+        writeAbs(item, drag.starts[item.id] + dTime, nb);
+        item.midi = drag.midis[item.id] + dMidi;
+      }
+      var primary = findNote(drag.id);
+      if (primary) state.pitch = primary.midi;
     } else if (drag.mode === "end") {
       var end = snapTime(abs, note.id, drag.startAbs + drag.startQuarters);
       var quarters = end - drag.startAbs;
@@ -1049,12 +1773,15 @@
 
   function onScoreUp(e) {
     if (!drag || (e.pointerId != null && e.pointerId !== drag.pointerId)) return;
+    var info = drag;
     drag = null;
     if (scoreEl.releasePointerCapture) {
       try {
         scoreEl.releasePointerCapture(e.pointerId);
       } catch (err) {}
     }
+    if (!info.moved && info.toggleOff) removeSelected(info.id);
+    else if (!info.moved && info.plainCollapse) selectOnly(info.id);
     renderAll();
   }
 
@@ -1116,45 +1843,373 @@
     saveStore();
   }
 
+  function syncLengthPreset(select, quarters) {
+    var value = formatQuarters(quarters);
+    var match = "";
+    var i;
+    for (i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === value) {
+        match = value;
+        break;
+      }
+    }
+    if (select.value !== match) select.value = match;
+  }
+
   function applyPreset(select, input, commit) {
     var raw = select.value;
-    select.value = "";
     if (raw === "") return;
+    if (select !== addLengthPreset && select !== extendPreset) select.value = "";
     input.value = raw;
     commit();
   }
 
-  function extendSelected() {
-    var note = selectedNote();
-    if (!note) return;
-    var quarters = musicalTime(note.quarters + 1 / 6);
+  function setSelectedLength() {
+    var notes = selectedNotes();
+    if (!notes.length) return;
+    var quarters = state.extendQuarters;
     if (quarters > 16) quarters = 16;
     if (quarters < STEP) quarters = STEP;
-    note.quarters = quarters;
+    var i;
+    for (i = 0; i < notes.length; i++) notes[i].quarters = quarters;
     stopPlayback();
     renderAll();
-    setStatus("8分の3連符を1つ足して、" + formatQuarters(quarters) + "拍。");
+    setStatus(lengthName(quarters) + "にした。");
+  }
+
+  function extendSelected() {
+    var notes = selectedNotes();
+    if (!notes.length) return;
+    var i;
+    var last = null;
+    for (i = 0; i < notes.length; i++) {
+      var quarters = musicalTime(notes[i].quarters + state.extendQuarters);
+      if (quarters > 16) quarters = 16;
+      if (quarters < STEP) quarters = STEP;
+      notes[i].quarters = quarters;
+      last = quarters;
+    }
+    stopPlayback();
+    renderAll();
+    if (notes.length === 1) setStatus(lengthName(state.extendQuarters) + "を足して、" + formatQuarters(last) + "拍。");
+    else setStatus(lengthName(state.extendQuarters) + "を、選んだ音に足した。");
   }
 
   function snapSelectionToEnd() {
-    var note = selectedNote();
-    if (!note) return;
-    var best = null;
+    var notes = selectedNotes();
+    if (!notes.length) return;
+    var nb = beatsPerMeasure();
+    var targets = [];
     var i;
-    for (i = 0; i < state.notes.length; i++) {
-      if (state.notes[i].id === note.id) continue;
-      var end = noteAbs(state.notes[i]) + state.notes[i].quarters;
-      if (best == null || end > best) best = end;
+    for (i = 0; i < notes.length; i++) {
+      var best = null;
+      var j;
+      for (j = 0; j < state.notes.length; j++) {
+        if (state.notes[j].id === notes[i].id) continue;
+        var end = noteAbs(state.notes[j]) + state.notes[j].quarters;
+        if (best == null || end > best) best = end;
+      }
+      targets.push(best);
     }
-    if (best == null) {
+    for (i = 0; i < notes.length; i++) {
+      if (targets[i] == null) continue;
+      var at = targets[i];
+      if (at < 0) at = 0;
+      if (absTooLate(at, nb) || endPastScore(at + notes[i].quarters, nb)) {
+        setStatus("64小節を超えるので、動かさなかった。");
+        return;
+      }
+    }
+    var any = false;
+    for (i = 0; i < notes.length; i++) {
+      if (targets[i] == null) continue;
+      var next = targets[i];
+      if (next < 0) next = 0;
+      writeAbs(notes[i], next, nb);
+      any = true;
+    }
+    if (!any) {
       setStatus("合わせる音がない。");
       return;
     }
-    if (best < 0) best = 0;
-    applyAbs(note, best, beatsPerMeasure());
     stopPlayback();
     renderAll();
     setStatus("いちばん遅い音の終わりに合わせた。");
+  }
+
+  function hasTimeline() {
+    return state.notes.length > 0 || state.phrases.length > 0 || state.breakAt != null;
+  }
+
+  function shiftAll(delta) {
+    if (!hasTimeline()) return;
+    var reason = shiftBlockReason(delta);
+    if (reason) {
+      setStatus(reason);
+      return;
+    }
+    var nb = beatsPerMeasure();
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      writeAbs(state.notes[i], noteAbs(state.notes[i]) + delta, nb);
+    }
+    for (i = 0; i < state.phrases.length; i++) state.phrases[i] += delta;
+    if (state.breakAt != null) state.breakAt += delta;
+    stopPlayback();
+    renderAll();
+    setStatus(delta < 0 ? "音とフレーズと印を、32分音符1つ分早くした。" : "音とフレーズと印を、32分音符1つ分遅くした。");
+  }
+
+  function boundaryHasWork(cut) {
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      if (noteAbs(state.notes[i]) + state.notes[i].quarters > cut + 1e-4) return true;
+    }
+    for (i = 0; i < state.phrases.length; i++) {
+      if (state.phrases[i] >= cut - 1e-4) return true;
+    }
+    return state.breakAt != null && state.breakAt >= cut - 1e-4;
+  }
+
+  function uniquePhrases(list) {
+    var out = [];
+    var i;
+    for (i = 0; i < list.length; i++) {
+      var abs = list[i];
+      var j;
+      var found = false;
+      for (j = 0; j < out.length; j++) {
+        if (samePhraseTime(out[j], abs)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) continue;
+      if (out.length >= PHRASE_MAX) break;
+      out.push(abs);
+    }
+    out.sort(function (a, b) {
+      return a - b;
+    });
+    return out;
+  }
+
+  function insertAtBoundary() {
+    if (state.boundary == null) return;
+    var cut = state.boundary;
+    var nb = beatsPerMeasure();
+    if (!boundaryHasWork(cut)) {
+      setStatus("この境目より後に、動かす音がない。");
+      return;
+    }
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      var note = state.notes[i];
+      var start = noteAbs(note);
+      var end = start + note.quarters;
+      if (end <= cut + 1e-4) continue;
+      if (start >= cut - 1e-4) {
+        if (absTooLate(start + STEP, nb) || endPastScore(end + STEP, nb)) {
+          setStatus("64小節を超えるので、動かさなかった。");
+          return;
+        }
+      } else if (note.quarters + STEP > 16 + 1e-9) {
+        setStatus("長さは16拍まで。");
+        return;
+      } else if (endPastScore(end + STEP, nb)) {
+        setStatus("64小節を超えるので、動かさなかった。");
+        return;
+      }
+    }
+    for (i = 0; i < state.phrases.length; i++) {
+      if (state.phrases[i] < cut - 1e-4) continue;
+      if (absTooLate(state.phrases[i] + STEP, nb)) {
+        setStatus("64小節を超えるので、動かさなかった。");
+        return;
+      }
+    }
+    if (state.breakAt != null && state.breakAt >= cut - 1e-4 && absTooLate(state.breakAt + STEP, nb)) {
+      setStatus("64小節を超えるので、動かさなかった。");
+      return;
+    }
+    for (i = 0; i < state.notes.length; i++) {
+      var item = state.notes[i];
+      var itemStart = noteAbs(item);
+      var itemEnd = itemStart + item.quarters;
+      if (itemEnd <= cut + 1e-4) continue;
+      if (itemStart >= cut - 1e-4) writeAbs(item, itemStart + STEP, nb);
+      else item.quarters += STEP;
+    }
+    for (i = 0; i < state.phrases.length; i++) {
+      if (state.phrases[i] >= cut - 1e-4) state.phrases[i] += STEP;
+    }
+    if (state.breakAt != null && state.breakAt >= cut - 1e-4) state.breakAt += STEP;
+    stopPlayback();
+    renderAll();
+    setStatus("境目より後を、32分音符1つ分遅くした。");
+  }
+
+  function deleteAtBoundary() {
+    if (state.boundary == null) return;
+    var cut = state.boundary;
+    var sliceEnd = cut + STEP;
+    var nb = beatsPerMeasure();
+    if (!boundaryHasWork(cut)) {
+      setStatus("この境目より後に、動かす音がない。");
+      return;
+    }
+    var kept = [];
+    var removed = 0;
+    var i;
+    for (i = 0; i < state.notes.length; i++) {
+      var note = state.notes[i];
+      var start = noteAbs(note);
+      var end = start + note.quarters;
+      if (end <= cut + 1e-4) {
+        kept.push(note);
+        continue;
+      }
+      if (start >= sliceEnd - 1e-4) {
+        writeAbs(note, start - STEP, nb);
+        kept.push(note);
+        continue;
+      }
+      if (start < cut - 1e-4 && end > sliceEnd + 1e-4) {
+        var span = note.quarters - STEP;
+        if (span < STEP - 1e-4) {
+          removed += 1;
+          continue;
+        }
+        note.quarters = span;
+        kept.push(note);
+        continue;
+      }
+      if (start >= cut - 1e-4 && start < sliceEnd - 1e-4 && end > sliceEnd + 1e-4) {
+        var rest = end - sliceEnd;
+        if (rest < STEP - 1e-4) {
+          removed += 1;
+          continue;
+        }
+        writeAbs(note, cut, nb);
+        note.quarters = rest;
+        kept.push(note);
+        continue;
+      }
+      if (start < cut - 1e-4 && end > cut + 1e-4) {
+        var head = cut - start;
+        if (head < STEP - 1e-4) {
+          removed += 1;
+          continue;
+        }
+        note.quarters = head;
+        kept.push(note);
+        continue;
+      }
+      removed += 1;
+    }
+    state.notes = kept;
+    var phrases = [];
+    for (i = 0; i < state.phrases.length; i++) {
+      var abs = state.phrases[i];
+      if (abs >= sliceEnd - 1e-4) phrases.push(abs - STEP);
+      else if (abs >= cut - 1e-4) phrases.push(cut);
+      else phrases.push(abs);
+    }
+    state.phrases = uniquePhrases(phrases);
+    if (state.breakAt != null) {
+      if (state.breakAt >= sliceEnd - 1e-4) state.breakAt -= STEP;
+      else if (state.breakAt >= cut - 1e-4) state.breakAt = cut;
+    }
+    pruneSelection();
+    stopPlayback();
+    renderAll();
+    if (removed) setStatus("32分音符より短くなった音を消した。");
+    else setStatus("境目より後を、32分音符1つ分早くした。");
+  }
+
+  function onGutterDown(e) {
+    var gutter = e.target.closest(".roll-gutter");
+    if (!gutter || !scoreEl.contains(gutter)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    var abs = clampToShown(cellFloor(timeFromClientY(e.clientY)));
+    if (state.boundary != null && Math.abs(state.boundary - abs) < 1e-4) state.boundary = null;
+    else state.boundary = abs;
+    stopPlayback();
+    renderGrid();
+    updatePlayButtons();
+    setStatus("");
+  }
+
+  function copySelectedNotes() {
+    var notes = selectedNotes();
+    if (!notes.length) return;
+    var origin = noteAbs(notes[0]);
+    var i;
+    for (i = 1; i < notes.length; i++) {
+      var abs = noteAbs(notes[i]);
+      if (abs < origin) origin = abs;
+    }
+    copiedNotes = [];
+    for (i = 0; i < notes.length; i++) {
+      copiedNotes.push({
+        midi: notes[i].midi,
+        offset: noteAbs(notes[i]) - origin,
+        quarters: notes[i].quarters
+      });
+    }
+    setStatus(copiedNotes.length + "音をコピーした。");
+  }
+
+  function pasteCopiedNotes() {
+    if (state.boundary == null) {
+      setStatus("境目が選ばれていない。");
+      return;
+    }
+    if (!copiedNotes || !copiedNotes.length) {
+      setStatus("コピーした音がない。");
+      return;
+    }
+    if (state.notes.length + copiedNotes.length > 500) {
+      setStatus("音は500まで。");
+      return;
+    }
+    var nb = beatsPerMeasure();
+    var origin = state.boundary;
+    var i;
+    for (i = 0; i < copiedNotes.length; i++) {
+      var start = origin + copiedNotes[i].offset;
+      var end = start + copiedNotes[i].quarters;
+      if (start < -1e-9) {
+        setStatus("0拍より前になるので、動かさなかった。");
+        return;
+      }
+      if (absTooLate(start, nb) || endPastScore(end, nb)) {
+        setStatus("64小節を超えるので、動かさなかった。");
+        return;
+      }
+    }
+    var ids = [];
+    for (i = 0; i < copiedNotes.length; i++) {
+      var at = origin + copiedNotes[i].offset;
+      var id = state.seq++;
+      var note = {
+        id: id,
+        midi: copiedNotes[i].midi,
+        measure: 1,
+        beat: 1,
+        quarters: copiedNotes[i].quarters
+      };
+      writeAbs(note, at, nb);
+      state.notes.push(note);
+      ids.push(id);
+    }
+    state.selected = ids;
+    var last = findNote(ids[ids.length - 1]);
+    if (last) state.pitch = last.midi;
+    stopPlayback();
+    renderAll();
+    setStatus(ids.length + "音を、境目から置いた。");
   }
 
   buildKeyboard();
@@ -1210,7 +2265,14 @@
       setStatus("拍子の分子は1から16まで。");
     }
   });
-  denominatorInput.addEventListener("change", onMeterInput);
+  denominatorInput.addEventListener("input", onMeterInput);
+  denominatorInput.addEventListener("change", function () {
+    var denominator = Number(denominatorInput.value);
+    if (!DENOMS[denominator]) {
+      denominatorInput.value = String(state.denominator);
+      setStatus("拍子の分母は2、4、8、16。");
+    }
+  });
 
   measuresInput.addEventListener("input", function () {
     var n = readInt(measuresInput, 1, 64);
@@ -1235,29 +2297,76 @@
     }
   });
 
-  midiInput.addEventListener("change", commitMidi);
-  lengthInput.addEventListener("change", commitSelectedLength);
-  addLengthInput.addEventListener("change", commitAddLength);
+  if (midiInput) midiInput.addEventListener("change", commitMidi);
+  if (lengthInput) lengthInput.addEventListener("change", commitSelectedLength);
+  if (addLengthInput) addLengthInput.addEventListener("change", commitAddLength);
 
   btnDelete.addEventListener("click", function () {
-    if (state.selected == null) return;
-    removeNote(state.selected);
+    if (!selectedIds().length) return;
+    var drop = {};
+    var ids = selectedIds();
+    var i;
+    for (i = 0; i < ids.length; i++) drop[ids[i]] = true;
+    state.notes = state.notes.filter(function (note) {
+      return !drop[note.id];
+    });
+    state.selected = [];
+    stopPlayback();
+    renderAll();
   });
 
-  lengthPreset.addEventListener("change", function () {
-    applyPreset(lengthPreset, lengthInput, commitSelectedLength);
-  });
+  if (lengthPreset) {
+    lengthPreset.addEventListener("change", function () {
+      applyPreset(lengthPreset, lengthInput, commitSelectedLength);
+    });
+  }
   addLengthPreset.addEventListener("change", function () {
-    applyPreset(addLengthPreset, addLengthInput, commitAddLength);
+    var raw = addLengthPreset.value;
+    if (raw === "") {
+      syncLengthPreset(addLengthPreset, state.lengthQuarters);
+      return;
+    }
+    var quarters = musicalTime(raw);
+    if (!Number.isFinite(quarters) || quarters < STEP || quarters > 16) {
+      syncLengthPreset(addLengthPreset, state.lengthQuarters);
+      setStatus("長さは32分音符（0.125拍）から16拍まで。");
+      return;
+    }
+    state.lengthQuarters = quarters;
+    syncLengthPreset(addLengthPreset, state.lengthQuarters);
+    setStatus("");
+    saveStore();
   });
+  extendPreset.addEventListener("change", commitExtendLength);
 
+  btnSetLength.addEventListener("click", setSelectedLength);
   btnExtend.addEventListener("click", extendSelected);
   btnSnapEnd.addEventListener("click", snapSelectionToEnd);
+  btnShiftEarlier.addEventListener("click", function () {
+    shiftAll(-STEP);
+  });
+  btnShiftLater.addEventListener("click", function () {
+    shiftAll(STEP);
+  });
+  btnBoundaryAdd.addEventListener("click", insertAtBoundary);
+  btnBoundaryRemove.addEventListener("click", deleteAtBoundary);
+  btnMulti.addEventListener("click", function () {
+    state.multi = !state.multi;
+    updatePlayButtons();
+  });
 
   scoreEl.addEventListener("pointerdown", onScoreDown);
+  scoreEl.addEventListener("pointerdown", onGridDown);
+  scoreEl.addEventListener("pointerdown", onBreakDown);
+  scoreEl.addEventListener("pointerdown", onPhraseDown);
+  scoreEl.addEventListener("pointerdown", onGutterDown);
   window.addEventListener("pointermove", onScoreMove);
+  window.addEventListener("pointermove", onPlaceMove);
+  window.addEventListener("pointermove", onHoverMove);
   window.addEventListener("pointerup", onScoreUp);
+  window.addEventListener("pointerup", onPlaceUp);
   window.addEventListener("pointercancel", onScoreUp);
+  window.addEventListener("pointercancel", onPlaceCancel);
 
   scoreEl.addEventListener("click", function (e) {
     if (Date.now() < blockClickUntil) {
@@ -1266,18 +2375,7 @@
     }
     if (e.target.closest(".score-note")) return;
     if (!e.target.closest(".roll-grid")) return;
-    var quarters = snapTime(timeFromClientY(e.clientY), null, null);
-    if (!Number.isFinite(quarters) || quarters < 0) quarters = 0;
-    var nb = beatsPerMeasure();
-    var maxStart = 64 * nb;
-    if (quarters > maxStart) quarters = maxStart;
-    var measure = Math.floor((quarters + 1e-6) / nb) + 1;
-    if (measure > 64) measure = 64;
-    var beat = musicalTime(quarters - (measure - 1) * nb + 1);
-    if (beat < 1) beat = 1;
-    state.pitch = midiFromClientX(e.clientX);
-    setStatus("");
-    addNote(measure, beat);
+    placeAtPointer(e.clientX, e.clientY);
   });
 
   btnPlay.addEventListener("click", function () {
@@ -1285,52 +2383,200 @@
     else playMelody(0, "start");
   });
 
+  function onPhraseDown(e) {
+    var col = e.target.closest(".roll-phrase");
+    if (!col || !scoreEl.contains(col)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    var abs = clampToShown(cellFloor(timeFromClientY(e.clientY)));
+    togglePhrase(abs);
+    stopPlayback();
+    renderAll();
+  }
+
+  function onBreakDown(e) {
+    var col = e.target.closest(".roll-break");
+    if (!col || !scoreEl.contains(col)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    var abs = clampToShown(cellFloor(timeFromClientY(e.clientY)));
+    if (state.breakAt != null && Math.abs(state.breakAt - abs) < 1e-6) state.breakAt = null;
+    else state.breakAt = abs;
+    stopPlayback();
+    saveStore();
+    renderGrid();
+    updatePlayButtons();
+  }
+
+  function commitExtendLength() {
+    var raw = extendPreset.value;
+    if (raw === "") {
+      syncLengthPreset(extendPreset, state.extendQuarters);
+      return;
+    }
+    var quarters = musicalTime(raw);
+    if (!Number.isFinite(quarters) || quarters < STEP || quarters > 16) {
+      syncLengthPreset(extendPreset, state.extendQuarters);
+      setStatus("長さは32分音符（0.125拍）から16拍まで。");
+      return;
+    }
+    state.extendQuarters = quarters;
+    syncLengthPreset(extendPreset, state.extendQuarters);
+    setStatus("");
+    saveStore();
+  }
+
   btnFrom.addEventListener("click", function () {
     if (playing && playMode === "from") stopPlayback();
     else {
-      var note = selectedNote();
-      if (!note) return;
-      scrollTimeIntoView(noteAbs(note));
-      playMelody(noteAbs(note) * quarterMs(), "from");
+      if (state.breakAt == null) return;
+      var fromMs = state.breakAt * quarterMs();
+      var has = false;
+      var i;
+      for (i = 0; i < state.notes.length; i++) {
+        if (noteAbs(state.notes[i]) * quarterMs() + 0.05 >= fromMs) {
+          has = true;
+          break;
+        }
+      }
+      if (!has) {
+        setStatus("印より後に、始まる音がない。");
+        return;
+      }
+      setStatus("");
+      scrollTimeIntoView(state.breakAt);
+      playMelody(fromMs, "from");
     }
   });
 
-  btnApply.addEventListener("click", function () {
-    try {
-      readEditorJson();
-    } catch (err) {
-      setStatus("JSONが読めない。" + (err && err.message ? err.message : ""));
-    }
-  });
+  if (btnApply) {
+    btnApply.addEventListener("click", function () {
+      try {
+        readEditorJson();
+      } catch (err) {
+        setStatus("JSONが読めない。" + (err && err.message ? err.message : ""));
+      }
+    });
+  }
 
-  btnSave.addEventListener("click", function () {
-    var blob = new Blob([jsonArea.value], { type: "application/json" });
+  function downloadJson() {
+    var blob = new Blob([melodyText()], { type: "application/json" });
     var a = document.createElement("a");
     var name = (state.title || "melody").replace(/[\\/:*?"<>|]/g, "_");
     a.href = URL.createObjectURL(blob);
     a.download = name + ".json";
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  function melodyText() {
+    return JSON.stringify(playbackObject(), null, 2);
+  }
+
+  function isFresh() {
+    if (state.notes.length) return false;
+    if (state.phrases.length) return false;
+    if ((state.title || "無題") !== "無題") return false;
+    if (state.bpm !== 120 || state.numerator !== 4 || state.denominator !== 4) return false;
+    if (state.measures !== 4) return false;
+    return jsonArea.value === melodyText();
+  }
+
+  function resetDocument(message) {
+    stopPlayback();
+    state.title = "無題";
+    state.bpm = 120;
+    state.numerator = 4;
+    state.denominator = 4;
+    state.measures = 4;
+    state.pitch = 60;
+    state.lengthQuarters = 0.5;
+    state.extendQuarters = 1 / 6;
+    state.breakAt = null;
+    state.phrases = [];
+    state.notes = [];
+    state.selected = [];
+    state.boundary = null;
+    state.seq = 1;
+    viewReady = false;
+    syncForm();
+    renderAll();
+    setStatus(message);
+  }
+
+  function openNewDialog() {
+    newReturnFocus = document.activeElement;
+    newBackdrop.hidden = false;
+    btnNewSave.focus();
+  }
+
+  function closeNewDialog() {
+    if (newBackdrop.hidden) return;
+    newBackdrop.hidden = true;
+    var back = newReturnFocus;
+    newReturnFocus = null;
+    if (back && back.focus) back.focus();
+  }
+
+  btnSave.addEventListener("click", downloadJson);
+
+  btnNew.addEventListener("click", function () {
+    if (isFresh()) setStatus("無題で、音はない。");
+    else openNewDialog();
+  });
+
+  btnNewSave.addEventListener("click", function () {
+    downloadJson();
+    closeNewDialog();
+    resetDocument("JSONを保存し、無題にして、音とフレーズを消した。");
+  });
+
+  btnNewDiscard.addEventListener("click", function () {
+    closeNewDialog();
+    resetDocument("保存せず、無題にして、音とフレーズを消した。");
+  });
+
+  btnNewCancel.addEventListener("click", closeNewDialog);
+
+  newBackdrop.addEventListener("click", function (e) {
+    if (e.target === newBackdrop) closeNewDialog();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (newBackdrop.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeNewDialog();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    var buttons = newDialog.querySelectorAll("button");
+    if (!buttons.length) return;
+    var first = buttons[0];
+    var last = buttons[buttons.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   });
 
   btnCopy.addEventListener("click", function () {
-    var text = jsonArea.value;
+    var text = melodyText();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(
         function () {
           setStatus("JSONをコピーした。");
         },
         function () {
-          jsonArea.focus();
-          jsonArea.select();
-          setStatus("コピーできない。JSONの文字を選んだ。");
+          setStatus("コピーできない。");
         }
       );
       return;
     }
-    jsonArea.focus();
-    jsonArea.select();
-    setStatus("JSONの文字を選んだ。");
+    setStatus("コピーできない。");
   });
 
   jsonInput.addEventListener("change", function () {
@@ -1355,12 +2601,28 @@
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (!newBackdrop.hidden) return;
+    if (e.isComposing) return;
     var tag = document.activeElement && document.activeElement.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if (state.selected == null) return;
+    var key = String(e.key || "").toLowerCase();
+    var command = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+    if (command && key === "c") {
+      if (!selectedIds().length) return;
+      e.preventDefault();
+      copySelectedNotes();
+      return;
+    }
+    if (command && key === "v") {
+      e.preventDefault();
+      if (e.repeat) return;
+      pasteCopiedNotes();
+      return;
+    }
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (!selectedIds().length) return;
     e.preventDefault();
-    removeNote(state.selected);
+    btnDelete.click();
   });
 
   scoreScroll.addEventListener("scroll", function () {

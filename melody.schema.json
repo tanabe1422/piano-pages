@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "melody.schema.json",
   "title": "ピアノ用メロディ",
-  "description": "音の高さと長さ。midi は C4=60、C#5=73。startMs と durationMs はミリ秒。bpm と拍子は入力ページ用で、再生は notes だけを使う。",
+  "description": "音の高さと長さ。midi は C4=60、C#5=73。startMs と durationMs はミリ秒。bpm と拍子は入力ページ用。再生は notes を使う。phrases があるときは、その区間を選べる。",
   "type": "object",
   "additionalProperties": false,
   "required": ["notes"],
@@ -45,6 +45,30 @@
             "minimum": 0
           },
           "durationMs": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      }
+    },
+    "phrases": {
+      "type": "array",
+      "maxItems": 99,
+      "description": "フレーズの開始と終わり。名前はフレーズ01から、時刻が早い順。endMs はその時刻を含まない。最後の endMs は音符の終わり。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "startMs", "endMs"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "startMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "endMs": {
             "type": "number",
             "exclusiveMinimum": 0
           }

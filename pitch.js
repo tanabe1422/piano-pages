@@ -8,6 +8,7 @@
     wide: { ok: 40, near: 75, okHold: 48, nearHold: 85 }
   };
   var LEVEL_HOLD_MS = 280;
+  var GUIDE_ONSET_MAX_MS = 100;
   var LEVEL_TOP = {
     "sharp-far": "12%",
     "sharp-near": "31%",
@@ -70,6 +71,7 @@
   var patternId = "scale-up";
   var song = null;
   var songShift = 0;
+  var phraseIndex = -1;
   var tolerance = "wide";
   var centsOk = TOLERANCE.wide.ok;
   var centsNear = TOLERANCE.wide.near;
@@ -97,6 +99,10 @@
   var pendingLevelSince = 0;
   var heldNearest = null;
   var heldMidi = null;
+  var guideJudgeId = "";
+  var guideHeldMidi = null;
+  var guideHeard = false;
+  var guideOnsetUntil = 0;
   var pendingMidi = null;
   var pendingSince = 0;
   var silenceSince = 0;
@@ -135,6 +141,8 @@
   var btnPattern = document.getElementById("btn-pattern");
   var btnSong = document.getElementById("btn-song");
   var songFile = document.getElementById("song-file");
+  var phraseWrap = document.getElementById("phrase-wrap");
+  var phraseSelect = document.getElementById("phrase-select");
   var patternMenu = document.getElementById("pattern-menu");
   var preferredMicId = "";
 
@@ -226,7 +234,8 @@
     centsNearHold = t.nearHold;
   }
 
-  function stabilizeLevel(rawLevel, now) {
+  function stabilizeLevel(rawLevel, now, holdMs, guideKey) {
+    var hold = holdMs == null ? LEVEL_HOLD_MS : holdMs;
     if (gaugeLevel == null) {
       gaugeLevel = rawLevel;
       pendingLevel = null;
@@ -241,9 +250,9 @@
     if (pendingLevel !== rawLevel) {
       pendingLevel = rawLevel;
       pendingLevelSince = now;
-      return gaugeLevel;
+      if (hold > 0) return gaugeLevel;
     }
-    if (now - pendingLevelSince >= LEVEL_HOLD_MS) {
+    if (now - pendingLevelSince >= hold) {
       var from = pendingLevelSince;
       var next = pendingLevel;
       gaugeLevel = next;
@@ -251,10 +260,66 @@
       pendingLevelSince = 0;
       var i;
       for (i = 0; i < trail.length; i++) {
-        if (trail[i].t >= from) trail[i].level = next;
+        if (trail[i].t < from) continue;
+        if (guideKey && trail[i].guideKey !== guideKey) continue;
+        trail[i].level = next;
       }
     }
     return gaugeLevel;
+  }
+
+  function guideKeyOf(guide) {
+    return guide.token + ":" + guide.t0 + ":" + guide.midi;
+  }
+
+  function guideOnsetMs(guide) {
+    var dur = guide.t1 - guide.t0;
+    var onset = GUIDE_ONSET_MAX_MS;
+    if (onset > dur * 0.45) onset = dur * 0.45;
+    if (onset < 30) onset = 30;
+    return onset;
+  }
+
+  function guideLevelHoldMs(guide) {
+    var dur = guide.t1 - guide.t0;
+    if (dur <= 280) return 40;
+    if (dur <= 480) return 60;
+    return 90;
+  }
+
+  function closeGuideJudge() {
+    if (!guideJudgeId) return;
+    guideJudgeId = "";
+    guideHeldMidi = null;
+    guideHeard = false;
+    guideOnsetUntil = 0;
+    pendingLevel = null;
+    pendingLevelSince = 0;
+  }
+
+  function openGuideJudge(guide) {
+    var key = guideKeyOf(guide);
+    if (key === guideJudgeId) return;
+    closeGuideJudge();
+    guideJudgeId = key;
+    gaugeLevel = null;
+    pendingLevel = null;
+    pendingLevelSince = 0;
+    heldNearest = null;
+    guideOnsetUntil = guide.t0 + guideOnsetMs(guide);
+  }
+
+  function midiAgainstGuide(rawMidi) {
+    if (guideHeldMidi == null) {
+      guideHeldMidi = rawMidi;
+      return rawMidi;
+    }
+    if (Math.abs(rawMidi - guideHeldMidi) * 100 > 60) {
+      guideHeldMidi = rawMidi;
+      return rawMidi;
+    }
+    guideHeldMidi = guideHeldMidi * 0.4 + rawMidi * 0.6;
+    return guideHeldMidi;
   }
 
   function hzToMidi(hz) {
@@ -465,7 +530,82 @@
     notes.sort(function (a, b) {
       return a.startMs - b.startMs;
     });
-    return { title: title, notes: notes };
+    var phrases = parsePhrases(data.phrases);
+    var songData = { title: title, notes: notes };
+    if (phrases.length) songData.phrases = phrases;
+    return songData;
+  }
+
+  function parsePhrases(raw) {
+    if (!Array.isArray(raw)) return [];
+    var list = [];
+    raw.forEach(function (p) {
+      if (!p || typeof p !== "object") return;
+      var name = typeof p.name === "string" ? p.name.trim() : "";
+      var startMs = Number(p.startMs);
+      var endMs = Number(p.endMs);
+      if (!name) return;
+      if (!Number.isFinite(startMs) || startMs < 0) return;
+      if (!Number.isFinite(endMs) || endMs <= startMs) return;
+      list.push({ name: name, startMs: startMs, endMs: endMs });
+    });
+    list.sort(function (a, b) {
+      return a.startMs - b.startMs || a.endMs - b.endMs;
+    });
+    var out = [];
+    list.forEach(function (p) {
+      if (out.length >= 99) return;
+      if (out.length && p.startMs <= out[out.length - 1].startMs) return;
+      out.push(p);
+    });
+    return out;
+  }
+
+  function selectedPhrase() {
+    if (!song || !Array.isArray(song.phrases)) return null;
+    if (phraseIndex < 0 || phraseIndex >= song.phrases.length) return null;
+    return song.phrases[phraseIndex];
+  }
+
+  function songPlayNotes() {
+    if (!song) return [];
+    var phrase = selectedPhrase();
+    if (!phrase) return song.notes;
+    return song.notes.filter(function (n) {
+      return n.startMs >= phrase.startMs && n.startMs < phrase.endMs;
+    });
+  }
+
+  function songPlayBase() {
+    var playNotes = songPlayNotes();
+    var head = playNotes.length ? playNotes[0] : song.notes[0];
+    return head.midi + songShift;
+  }
+
+  function refreshPhraseSelect() {
+    var phrases = song && Array.isArray(song.phrases) ? song.phrases : [];
+    var show = songMode() && phrases.length > 0;
+    phraseWrap.hidden = !show;
+    if (!show) return;
+    if (phraseIndex >= phrases.length) phraseIndex = -1;
+    var signature = phrases.map(function (p) {
+      return p.name + "\t" + p.startMs + "\t" + p.endMs;
+    }).join("\n");
+    if (phraseSelect.dataset.signature !== signature) {
+      phraseSelect.dataset.signature = signature;
+      phraseSelect.innerHTML = "";
+      var all = document.createElement("option");
+      all.value = "all";
+      all.textContent = "全部";
+      phraseSelect.appendChild(all);
+      phrases.forEach(function (p, i) {
+        var opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = p.name;
+        phraseSelect.appendChild(opt);
+      });
+    }
+    phraseSelect.value = phraseIndex < 0 ? "all" : String(phraseIndex);
   }
 
   function rememberSong() {
@@ -480,10 +620,12 @@
 
   function songEvents() {
     var rate = speedRate();
-    return song.notes.map(function (n) {
+    var phrase = selectedPhrase();
+    var origin = phrase ? phrase.startMs : 0;
+    return songPlayNotes().map(function (n) {
       return {
         midi: n.midi + songShift,
-        startMs: n.startMs * rate,
+        startMs: (n.startMs - origin) * rate,
         durationMs: n.durationMs * rate,
         guide: true
       };
@@ -493,9 +635,11 @@
   }
 
   function songBounds(extra) {
+    var notes = songPlayNotes();
+    if (!notes.length) return { min: -1, max: 128 };
     var min = 127;
     var max = 0;
-    song.notes.forEach(function (n) {
+    notes.forEach(function (n) {
       var m = n.midi + songShift + extra;
       if (m < min) min = m;
       if (m > max) max = m;
@@ -506,17 +650,20 @@
   function updatePlayButton() {
     btnPlayLabel.textContent = playing ? "停止" : "再生";
     if (songMode()) {
-      btnPlayTonic.textContent = song.title + (songShift ? (songShift > 0 ? " +" : " ") + songShift : "");
+      var phrase = selectedPhrase();
+      var name = phrase ? phrase.name : song.title;
+      btnPlayTonic.textContent = name + (songShift ? (songShift > 0 ? " +" : " ") + songShift : "");
     } else {
       btnPlayTonic.textContent = formatNote(tonic);
     }
+    refreshPhraseSelect();
     btnPlay.classList.toggle("is-playing", playing);
     btnPlay.setAttribute("aria-pressed", playing ? "true" : "false");
   }
 
   function updateTonicMark() {
     var mark = tonic;
-    if (songMode()) mark = song.notes[0].midi + songShift;
+    if (songMode()) mark = songPlayBase();
     Object.keys(keysByMidi).forEach(function (key) {
       keysByMidi[key].classList.toggle("is-start", Number(key) === mark);
     });
@@ -574,7 +721,7 @@
       btnSemiHigher.disabled = semiUp.max > 127;
       btnOctLower.disabled = octDown.min < 0;
       btnOctHigher.disabled = octUp.max > 127;
-      var base = song.notes[0].midi + songShift;
+      var base = songPlayBase();
       var saved = tonic;
       tonic = base;
       var scaleDown = base + (nextScaleTonic(-1) - base);
@@ -856,17 +1003,26 @@
     );
   }
 
-  function activeGuide(at) {
-    if (!playing || !guideNotes.length) return null;
+  function guideAt(at, midi, token) {
     var best = null;
+    var bestDist = Infinity;
     var i;
     for (i = 0; i < guideNotes.length; i++) {
       var note = guideNotes[i];
-      if (note.token !== activePlayToken) continue;
+      if (token != null && note.token !== token) continue;
       if (at < note.t0 || at >= note.t1) continue;
-      if (!best || note.midi > best.midi) best = note;
+      var dist = midi == null ? -note.midi : Math.abs(midi - note.midi);
+      if (dist < bestDist) {
+        best = note;
+        bestDist = dist;
+      }
     }
     return best;
+  }
+
+  function activeGuide(at, midi) {
+    if (!playing || !guideNotes.length) return null;
+    return guideAt(at, midi, activePlayToken);
   }
 
   function pruneGuideNotes(now) {
@@ -1011,7 +1167,7 @@
 
   function shiftScale(dir) {
     if (songMode()) {
-      var base = song.notes[0].midi + songShift;
+      var base = songPlayBase();
       var saved = tonic;
       tonic = base;
       var next = nextScaleTonic(dir);
@@ -1136,6 +1292,8 @@
     pendingLevelSince = 0;
     heldNearest = null;
     heldMidi = null;
+    guideHeldMidi = null;
+    guideHeard = false;
     pendingMidi = null;
     pendingSince = 0;
     silenceSince = 0;
@@ -1153,7 +1311,8 @@
       "is-sharp-near",
       "is-flat-far",
       "is-sharp-far",
-      "is-silent"
+      "is-silent",
+      "is-wait"
     );
     gaugeEl.classList.add("is-silent");
     needleEl.style.top = "50%";
@@ -1228,12 +1387,37 @@
       uiPaused = false;
     }
     var detectAt = now - detectLagMs();
-    var midi = stabilizeMidi(hzToMidi(hz), now);
+    var rawMidi = hzToMidi(hz);
+    stabilizeMidi(rawMidi, now);
+    var guide = activeGuide(detectAt, rawMidi);
+    var midi;
+    var provisional = false;
+    var level;
+    if (guide) {
+      openGuideJudge(guide);
+      midi = midiAgainstGuide(rawMidi);
+    } else {
+      closeGuideJudge();
+      midi = heldMidi;
+    }
     var nearest = stableNearest(midi);
-    var guide = activeGuide(detectAt);
     var target = guide ? guide.midi : nearest;
     var cents = (midi - target) * 100;
-    var level = stabilizeLevel(centsLevel(cents, gaugeLevel), now);
+    if (guide) {
+      var inOnset = detectAt < guideOnsetUntil;
+      var rawLevel = centsLevel(cents, guideHeard ? gaugeLevel : null);
+      var far = rawLevel === "flat-far" || rawLevel === "sharp-far";
+      if (inOnset && far && !guideHeard) {
+        provisional = true;
+        level = null;
+      } else {
+        if (!far || !inOnset) guideHeard = true;
+        var holdMs = gaugeLevel == null || rawLevel === "ok" ? 0 : guideLevelHoldMs(guide);
+        level = stabilizeLevel(rawLevel, now, holdMs, guideJudgeId);
+      }
+    } else {
+      level = stabilizeLevel(centsLevel(cents, gaugeLevel), now, LEVEL_HOLD_MS, "");
+    }
 
     lastDetect = {
       midi: midi,
@@ -1251,8 +1435,10 @@
       nearest: nearest,
       target: target,
       guideMidi: guide ? guide.midi : null,
+      guideKey: guide ? guideJudgeId : "",
       cents: cents,
-      level: level
+      level: level || "flat-far",
+      provisional: provisional
     });
     pruneTrail(now);
     pruneGuideNotes(now);
@@ -1275,7 +1461,8 @@
       "is-sharp-near",
       "is-flat-far",
       "is-sharp-far",
-      "is-silent"
+      "is-silent",
+      "is-wait"
     );
     if (!lastDetect) {
       nowEl.textContent = "—";
@@ -1286,6 +1473,15 @@
       return;
     }
     nowEl.textContent = formatNote(lastDetect.nearest);
+    if (!lastDetect.level) {
+      gaugeEl.classList.add("is-wait");
+      needleEl.style.top = "50%";
+      var waitCents = Math.max(-50, Math.min(50, lastDetect.cents));
+      liveEl.hidden = false;
+      liveEl.style.top = 50 - (waitCents / 50) * 50 + "%";
+      clearSungHighlight();
+      return;
+    }
     var level = lastDetect.level || gaugeLevel || "ok";
     gaugeEl.classList.add("is-" + level);
     needleEl.style.top = LEVEL_TOP[level] || "50%";
@@ -1327,15 +1523,34 @@
     return 0;
   }
 
+  function trailAppearance(p) {
+    var guide = guideAt(p.t, p.midi);
+    if (guide) {
+      var cents = (p.midi - guide.midi) * 100;
+      var level = centsLevel(cents, null);
+      var far = level === "flat-far" || level === "sharp-far";
+      if (p.provisional && far) return null;
+      return { level: level, vsGuide: true, mark: guide.t0 + ":" + guide.midi };
+    }
+    if (p.provisional) return null;
+    return { level: trailLevel(p), vsGuide: false, mark: "" };
+  }
+
   function buildVoiceSegments() {
     var segs = [];
     var cur = null;
     var i;
     for (i = 0; i < trail.length; i++) {
       var p = trail[i];
-      var level = trailLevel(p);
-      var vsGuide = p.guideMidi != null;
-      var key = p.nearest + ":" + level + ":" + (vsGuide ? "g" : "n");
+      var look = trailAppearance(p);
+      if (!look) {
+        if (cur) segs.push(cur);
+        cur = null;
+        continue;
+      }
+      var level = look.level;
+      var vsGuide = look.vsGuide;
+      var key = look.mark + ":" + p.nearest + ":" + level + ":" + (vsGuide ? "g" : "n");
       if (!cur || cur.key !== key || p.t - cur.lastT > 160) {
         if (cur) segs.push(cur);
         cur = {
@@ -1718,7 +1933,19 @@
     if (playing) stopPlayback();
     else playScale();
   });
-  btnSong.addEventListener("pointerdown", function () {
+  phraseSelect.addEventListener("change", function () {
+    var next = phraseSelect.value === "all" ? -1 : Number(phraseSelect.value);
+    if (!Number.isInteger(next) || next < 0) next = -1;
+    if (next === phraseIndex) return;
+    phraseIndex = next;
+    if (playing) stopPlayback();
+    updateTransposeButtons();
+    updateTonicMark();
+    updatePlayButton();
+  });
+  btnSong.addEventListener("click", function () {
+    songFile.value = "";
+    songFile.click();
     ensureAudio();
   });
   songFile.addEventListener("change", function () {
@@ -1730,6 +1957,7 @@
       try {
         song = parseSong(String(reader.result));
         songShift = 0;
+        phraseIndex = -1;
         patternId = "song";
         rememberSong();
         try {

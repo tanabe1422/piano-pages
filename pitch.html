@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>音程</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <div class="page page-pitch">
@@ -29,6 +29,13 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="pitch-phrase-wrap" id="phrase-wrap" hidden>
+        <label class="control-label" id="phrase-label" for="phrase-select">フレーズ</label>
+        <select class="pitch-select" id="phrase-select" aria-labelledby="phrase-label">
+          <option value="all">全部</option>
+        </select>
       </div>
 
       <div class="pitch-transport-row">
@@ -69,10 +76,7 @@
           </button>
         </div>
         <div class="pitch-pattern-wrap">
-          <label class="btn btn-side btn-song" id="btn-song" aria-label="曲のJSONを開く">
-            曲
-            <input type="file" id="song-file" accept=".json,application/json,text/plain,.txt">
-          </label>
+          <button type="button" class="btn btn-side btn-song" id="btn-song">曲</button>
           <button type="button" class="btn btn-side btn-pattern" id="btn-pattern" aria-haspopup="listbox" aria-expanded="false" aria-controls="pattern-menu" aria-label="練習パターンを選ぶ">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
               <path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
@@ -138,7 +142,7 @@
             <button type="button" class="segment" role="radio" aria-checked="false" data-tolerance="normal">ふつう</button>
             <button type="button" class="segment is-on" role="radio" aria-checked="true" data-tolerance="wide">ひろい</button>
           </div>
-          <p class="hint">ひろいは約±40セント。カラオケの音程バーに近い目安で、公式の数値ではない。</p>
+          <p class="hint">ひろいは約±40セント。枠は音の位置で、線がその音からこの範囲に入ると緑になる。カラオケの目安で、公式の数値ではない。</p>
         </div>
         <div class="control-block">
           <label class="control-label" for="mic-select">マイク</label>
@@ -149,7 +153,8 @@
       </div>
     </div>
   </div>
+  <input id="song-file" type="file" accept=".json,application/json,text/plain,.txt" tabindex="-1" aria-label="曲のJSONを開く" style="position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0">
   <script src="yin.js"></script>
-  <script src="pitch.js"></script>
+  <script src="pitch.js?v=4"></script>
 </body>
 </html>

@@ -96,24 +96,62 @@
     notes.sort(function (a, b) {
       return a.startMs - b.startMs;
     });
-    return { title: title, notes: notes };
+    var melodyData = { title: title, notes: notes };
+    var phrases = parsePhrases(data.phrases);
+    if (phrases.length) melodyData.phrases = phrases;
+    return melodyData;
+  }
+
+  function parsePhrases(raw) {
+    if (!Array.isArray(raw)) return [];
+    var list = [];
+    raw.forEach(function (p) {
+      if (!p || typeof p !== "object") return;
+      var name = typeof p.name === "string" ? p.name.trim() : "";
+      var startMs = Number(p.startMs);
+      var endMs = Number(p.endMs);
+      if (!name) return;
+      if (!Number.isFinite(startMs) || startMs < 0) return;
+      if (!Number.isFinite(endMs) || endMs <= startMs) return;
+      list.push({
+        name: name,
+        startMs: Math.round(startMs * 10) / 10,
+        endMs: Math.round(endMs * 10) / 10
+      });
+    });
+    list.sort(function (a, b) {
+      return a.startMs - b.startMs || a.endMs - b.endMs;
+    });
+    var out = [];
+    list.forEach(function (p) {
+      if (out.length >= 99) return;
+      if (out.length && p.startMs <= out[out.length - 1].startMs) return;
+      out.push(p);
+    });
+    return out;
   }
 
   function melodyJson(data) {
-    return JSON.stringify(
-      {
-        title: data.title,
-        notes: data.notes.map(function (n) {
-          return {
-            midi: n.midi,
-            startMs: Math.round(n.startMs * 10) / 10,
-            durationMs: Math.round(n.durationMs * 10) / 10
-          };
-        })
-      },
-      null,
-      2
-    );
+    var body = {
+      title: data.title,
+      notes: data.notes.map(function (n) {
+        return {
+          midi: n.midi,
+          startMs: Math.round(n.startMs * 10) / 10,
+          durationMs: Math.round(n.durationMs * 10) / 10
+        };
+      })
+    };
+    if (data.phrases && data.phrases.length) {
+      body.phrases = data.phrases.map(function (p) {
+        return {
+          name: p.name,
+          startMs: Math.round(p.startMs * 10) / 10,
+          endMs: Math.round(p.endMs * 10) / 10
+        };
+      });
+    }
+    return JSON.stringify(body, null, 2);
   }
 
   function setMelody(next, opts) {
