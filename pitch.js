@@ -40,13 +40,15 @@
   var CUE_GAP_MS = 1000;
   var SKEW_MS = { early: 50, normal: 0, late: -50 };
   var HIC_MIDI = 72;
+  var HIC_BASE_MIN = START_MIDI + 12;
+  var HIC_BASE_MAX = END_MIDI;
   var PATTERNS = [
     { id: "scale-up", label: "音階 下→上→下" },
     { id: "scale-down", label: "音階 上→下→上" },
     { id: "leap-up", label: "半音往復 低いほうから" },
     { id: "leap-down", label: "半音往復 高いほうから" },
-    { id: "leap-hic-down", label: "半音往復 高いド mid2B→mid2C", root: HIC_MIDI },
-    { id: "leap-hic-up", label: "半音往復 高いド mid2C→mid2B", root: HIC_MIDI }
+    { id: "leap-hic-down", label: "半音往復 高いド mid2B→mid2C" },
+    { id: "leap-hic-up", label: "半音往復 高いド mid2C→mid2B" }
   ];
   var LABEL_KEY = "piano-pitch-label";
   var MIC_KEY = "piano-pitch-mic";
@@ -72,6 +74,7 @@
   var speed = "normal";
   var skew = "normal";
   var patternId = "scale-up";
+  var hicBase = HIC_MIDI;
   var song = null;
   var songShift = 0;
   var phraseIndex = -1;
@@ -440,15 +443,12 @@
     events.push({ midi: base, durationMs: longMs, guide: true });
   }
 
-  function patternRoot() {
-    var meta = patternMeta(patternId);
-    if (meta && typeof meta.root === "number") return meta.root;
-    return null;
+  function hicPattern() {
+    return patternId === "leap-hic-down" || patternId === "leap-hic-up";
   }
 
   function patternBase() {
-    var root = patternRoot();
-    return root == null ? tonic : root;
+    return hicPattern() ? hicBase : tonic;
   }
 
   function signedLeaps(list, sign) {
@@ -504,12 +504,12 @@
     }
 
     if (patternId === "leap-hic-down") {
-      pushLeapRun(events, HIC_MIDI, -1, noteMs, longMs);
+      pushLeapRun(events, hicBase, -1, noteMs, longMs);
       return events;
     }
 
     if (patternId === "leap-hic-up") {
-      pushLeapRunFromFar(events, HIC_MIDI, -1, noteMs, longMs);
+      pushLeapRunFromFar(events, hicBase, -1, noteMs, longMs);
       return events;
     }
 
@@ -754,14 +754,24 @@
     return tonicFromDegree(oct, deg + dir);
   }
 
+  function nextScaleFrom(base, dir) {
+    var saved = tonic;
+    tonic = base;
+    var next = nextScaleTonic(dir);
+    tonic = saved;
+    return next;
+  }
+
   function updateTransposeButtons() {
-    if (patternRoot() != null) {
-      btnScaleLower.disabled = true;
-      btnScaleHigher.disabled = true;
-      btnSemiLower.disabled = true;
-      btnSemiHigher.disabled = true;
-      btnOctLower.disabled = true;
-      btnOctHigher.disabled = true;
+    if (hicPattern()) {
+      var hicScaleDown = nextScaleFrom(hicBase, -1);
+      var hicScaleUp = nextScaleFrom(hicBase, 1);
+      btnScaleLower.disabled = hicScaleDown < HIC_BASE_MIN;
+      btnScaleHigher.disabled = hicScaleUp > HIC_BASE_MAX;
+      btnSemiLower.disabled = hicBase - 1 < HIC_BASE_MIN;
+      btnSemiHigher.disabled = hicBase + 1 > HIC_BASE_MAX;
+      btnOctLower.disabled = hicBase - 12 < HIC_BASE_MIN;
+      btnOctHigher.disabled = hicBase + 12 > HIC_BASE_MAX;
       return;
     }
     if (songMode()) {
@@ -1201,8 +1211,23 @@
     if (playing) playScale();
   }
 
+  function shiftHicTo(next) {
+    if (!hicPattern()) return;
+    if (next < HIC_BASE_MIN || next > HIC_BASE_MAX) return;
+    if (next === hicBase) return;
+    hicBase = next;
+    updateTransposeButtons();
+    updateTonicMark();
+    updatePlayButton();
+    playScale();
+  }
+
   function shiftTonicTo(next) {
-    if (songMode() || patternRoot() != null) return;
+    if (songMode()) return;
+    if (hicPattern()) {
+      shiftHicTo(next);
+      return;
+    }
     if (next < TONIC_MIN || next > TONIC_MAX) return;
     if (next === tonic) return;
     tonic = next;
@@ -1222,6 +1247,10 @@
       shiftSongBy(next - base);
       return;
     }
+    if (hicPattern()) {
+      shiftHicTo(nextScaleFrom(hicBase, dir));
+      return;
+    }
     shiftTonicTo(nextScaleTonic(dir));
   }
 
@@ -1230,12 +1259,20 @@
       shiftSongBy(dir);
       return;
     }
+    if (hicPattern()) {
+      shiftHicTo(hicBase + dir);
+      return;
+    }
     shiftTonicTo(tonic + dir);
   }
 
   function shiftOctave(dir) {
     if (songMode()) {
       shiftSongBy(dir * 12);
+      return;
+    }
+    if (hicPattern()) {
+      shiftHicTo(hicBase + dir * 12);
       return;
     }
     shiftTonicTo(tonic + dir * 12);
